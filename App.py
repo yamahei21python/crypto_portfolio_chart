@@ -51,6 +51,7 @@ def add_transaction_to_bq(date, coin_id, coin_name, exchange, type, qty, price, 
 def get_transactions_from_bq():
     query = f"SELECT * FROM `{TABLE_FULL_ID}` ORDER BY transaction_date DESC"
     try:
+        # Streamlit Cloudでの互換性のためにcreate_bqstorage_client=Falseを追加
         df = client.query(query).to_dataframe(create_bqstorage_client=False)
     except google.api_core.exceptions.NotFound:
         st.warning("取引履歴テーブルが見つかりません。最初の取引を登録してください。")
@@ -141,16 +142,19 @@ with tab1:
     with col2:
         st.subheader("📋 保有資産一覧")
         if portfolio:
-            portfolio_df = pd.DataFrame.from_dict(portfolio, orient='index')
+            # ### エラー修正 ###
+            portfolio_df = pd.DataFrame.from_dict(portfolio, orient='index').reset_index(drop=True)
             portfolio_df_before_edit = portfolio_df.copy()
+            
             portfolio_df_display = portfolio_df.copy()
             portfolio_df_display['現在価格'] = portfolio_df_display['現在価格(JPY)'] * exchange_rate
             portfolio_df_display['評価額'] = portfolio_df_display['評価額(JPY)'] * exchange_rate
-            portfolio_df_display.set_index(['コイン名', '取引所'], inplace=True)
-            
+
             edited_df = st.data_editor(
-                portfolio_df_display[['保有数量', '現在価格', '評価額']],
-                disabled=['現在価格', '評価額'],
+                # 「コイン名」と「取引所」を通常の列として渡す
+                portfolio_df_display[['コイン名', '取引所', '保有数量', '現在価格', '評価額']],
+                # 「コイン名」と「取引所」も編集不可にする
+                disabled=['コイン名', '取引所', '現在価格', '評価額'],
                 column_config={
                     "保有数量": st.column_config.NumberColumn(format="%.8f"),
                     "現在価格": st.column_config.NumberColumn(f"現在価格 ({selected_currency.upper()})", format=f"{currency_symbol},.2f"),
@@ -158,20 +162,26 @@ with tab1:
                 }, use_container_width=True, key="portfolio_editor")
 
             update_triggered = False
-            edited_df.reset_index(inplace=True)
-            for _, row in edited_df.iterrows():
-                coin_name, exchange, edited_quantity = row['コイン名'], row['取引所'], row['保有数量']
-                mask = (portfolio_df_before_edit['コイン名'] == coin_name) & (portfolio_df_before_edit['取引所'] == exchange)
-                original_row = portfolio_df_before_edit[mask]
+            # 編集検知ロジックを通常のインデックス用に変更
+            for index, row in edited_df.iterrows():
+                original_row = portfolio_df_before_edit.loc[index]
+                original_quantity = original_row['保有数量']
+                edited_quantity = row['保有数量']
                 
-                if not original_row.empty:
-                    original_quantity = original_row.iloc[0]['保有数量']
-                    if not np.isclose(original_quantity, edited_quantity):
-                        quantity_diff = edited_quantity - original_quantity
-                        coin_id, transaction_type = original_row.index[0][0], "調整（増）" if quantity_diff > 0 else "調整（減）"
+                if not np.isclose(original_quantity, edited_quantity):
+                    quantity_diff = edited_quantity - original_quantity
+                    # 編集前のDataFrameから情報を取得
+                    coin_name = original_row['コイン名']
+                    exchange = original_row['取引所']
+                    # coin_idをname_mapから逆引き
+                    coin_id = next((cid for cid, name in name_map.items() if name == coin_name), None)
+                    
+                    if coin_id:
+                        transaction_type = "調整（増）" if quantity_diff > 0 else "調整（減）"
                         add_transaction_to_bq(datetime.now(timezone.utc), coin_id, coin_name, exchange, transaction_type, abs(quantity_diff), 0, 0, 0)
                         st.toast(f"{coin_name} ({exchange}) の数量を調整: {quantity_diff:+.8f}", icon="✍️")
                         update_triggered = True
+            
             if update_triggered: st.rerun()
         else: st.info("保有資産はありません。")
 
