@@ -33,6 +33,9 @@ BIGQUERY_SCHEMA = [
 CURRENCY_SYMBOLS = {'jpy': '¥', 'usd': '$'}
 TRANSACTION_TYPES_BUY = ['購入', '調整（増）']
 TRANSACTION_TYPES_SELL = ['売却', '調整（減）']
+# ▼▼▼【変更箇所】取引所のリストを定数として定義 ▼▼▼
+EXCHANGES_ORDERED = ['SBIVC', 'BITPOINT', 'Binance', 'bitbank', 'GMOコイン', 'Bybit']
+# ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
 
 # --- 初期設定 & クライアント初期化 ---
@@ -336,7 +339,13 @@ def display_transaction_form(coin_options: Dict, name_map: Dict):
                 selected_coin_disp_name = st.selectbox("コイン種別", options=coin_options.keys())
             with c2:
                 transaction_type = st.selectbox("売買種別", ["購入", "売却"])
-                exchange = st.text_input("取引所", "Binance")
+                # ▼▼▼【変更箇所】取引所の入力をテキスト入力から選択式に変更 ▼▼▼
+                exchange = st.selectbox(
+                    "取引所",
+                    options=EXCHANGES_ORDERED,
+                    index=2  # デフォルトを'Binance'に設定 (リストの3番目)
+                )
+                # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
             with c3:
                 quantity = st.number_input("数量", min_value=0.0, format="%.8f")
                 price = st.number_input("価格(JPY)", min_value=0.0, format="%.2f")
@@ -361,8 +370,8 @@ def display_transaction_history(transactions_df: pd.DataFrame):
         st.info("まだ取引履歴がありません。")
         return
     history_config = {
-        "取引日": st.column_config.DatetimeColumn("取引日時", format="YYYY/MM/DD HH:mm"), 
-        "数量": st.column_config.NumberColumn(format="%.6f"), 
+        "取引日": st.column_config.DatetimeColumn("取引日時", format="YYYY/MM/DD HH:mm"),
+        "数量": st.column_config.NumberColumn(format="%.6f"),
     }
     st.dataframe(
         transactions_df[['取引日', 'コイン名', '取引所', '売買種別', '数量']],
@@ -415,12 +424,12 @@ def main():
 
     if 'currency' not in st.session_state: st.session_state.currency = 'jpy'
     if 'confirm_delete' not in st.session_state: st.session_state.confirm_delete = False
-        
+
     market_data = get_market_data()
     if market_data.empty:
         st.error("市場データを取得できませんでした。しばらくしてから再読み込みしてください。")
         st.stop()
-        
+
     price_map = market_data.set_index('id')['price_jpy'].to_dict()
     price_change_map = market_data.set_index('id')['price_change_24h_jpy'].to_dict()
     name_map = market_data.set_index('id')['name'].to_dict()
@@ -429,7 +438,7 @@ def main():
     selected_currency = st.radio("表示通貨を選択", ['jpy', 'usd'], format_func=lambda x: x.upper(), horizontal=True, key='currency')
     exchange_rate = get_exchange_rate(selected_currency)
     currency_symbol = CURRENCY_SYMBOLS[selected_currency]
-    
+
     init_bigquery_table()
     transactions_df = get_transactions_from_bq()
 
@@ -438,32 +447,29 @@ def main():
     with tab1:
         portfolio, total_asset_jpy, total_change_24h_jpy = calculate_portfolio(transactions_df, price_map, price_change_map, name_map)
         total_asset_btc = calculate_btc_value(total_asset_jpy, price_map)
-        
+
         delta_display_str, jpy_delta_color, delta_btc_str, btc_delta_color = calculate_deltas(
             total_asset_jpy, total_change_24h_jpy, exchange_rate, currency_symbol, price_map, price_change_map
         )
-        
+
         # サマリー表示
         display_summary(total_asset_jpy, selected_currency, exchange_rate, currency_symbol, total_asset_btc, delta_display_str, delta_btc_str)
         st.markdown("---")
-        
+
         c1, c2 = st.columns([1, 1.2])
         with c1:
             display_asset_pie_chart(portfolio, exchange_rate, currency_symbol, total_asset_jpy, total_asset_btc)
-            
-            # ▼▼▼【変更箇所】円グラフの下に変動情報をポートフォリオサマリーと同様のst.metricスタイルで表示 ▼▼▼
+
             st.divider()
             d1, d2 = st.columns(2)
             with d1:
-                # delta_display_str を value と delta に分割
-                # 例: "¥-1,234.56 (-1.23%)" -> value="¥-1,234.56", delta="-1.23%"
                 try:
                     jpy_value_part, jpy_delta_part = delta_display_str.rsplit(' (', 1)
-                    jpy_delta_part = jpy_delta_part[:-1] # 最後の ')' を削除
-                except ValueError: # パーセント部分がなく分割できない場合
+                    jpy_delta_part = jpy_delta_part[:-1]
+                except ValueError:
                     jpy_value_part = delta_display_str
                     jpy_delta_part = None
-                
+
                 d1.metric(
                     label=f"24H変動 ({selected_currency.upper()})",
                     value=jpy_value_part,
@@ -471,15 +477,14 @@ def main():
                 )
 
             with d2:
-                # delta_btc_str を value と delta に分割
                 if delta_btc_str != "N/A":
                     try:
                         btc_value_part, btc_delta_part = delta_btc_str.rsplit(' (', 1)
-                        btc_delta_part = btc_delta_part[:-1] # 最後の ')' を削除
+                        btc_delta_part = btc_delta_part[:-1]
                     except ValueError:
                         btc_value_part = delta_btc_str
                         btc_delta_part = None
-                        
+
                     d2.metric(
                         label="24H変動 (BTC)",
                         value=btc_value_part,
@@ -490,11 +495,10 @@ def main():
                         label="24H変動 (BTC)",
                         value="N/A"
                     )
-            # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-            
+
         with c2:
             display_asset_list(portfolio, selected_currency, exchange_rate, name_map)
-            
+
         st.markdown("---")
         display_transaction_form(coin_options, name_map)
         display_transaction_history(transactions_df)
