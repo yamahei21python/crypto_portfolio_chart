@@ -92,6 +92,37 @@ def add_transaction_to_bq(transaction_data: Dict[str, Any]):
         return False
     return True
 
+# ★★★ 変更点 ★★★
+def delete_transaction_from_bq(transaction: pd.Series) -> bool:
+    """指定された取引データをBigQueryから削除する"""
+    if not bq_client: return False
+    # 削除対象を一意に特定するための条件を作成
+    # 浮動小数点数の完全一致は危険なため、quantityは丸めて比較するか、ここでは他の文字列とタイムスタンプで特定する
+    # タイムスタンプはマイクロ秒まで含めて比較するため、ほぼ一意に特定できる
+    query = f"""
+        DELETE FROM `{TABLE_FULL_ID}`
+        WHERE transaction_date = @transaction_date
+        AND coin_id = @coin_id
+        AND exchange = @exchange
+        AND transaction_type = @transaction_type
+        AND quantity = @quantity
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("transaction_date", "TIMESTAMP", transaction['取引日']),
+            bigquery.ScalarQueryParameter("coin_id", "STRING", transaction['コインID']),
+            bigquery.ScalarQueryParameter("exchange", "STRING", transaction['取引所']),
+            bigquery.ScalarQueryParameter("transaction_type", "STRING", transaction['売買種別']),
+            bigquery.ScalarQueryParameter("quantity", "FLOAT64", transaction['数量']),
+        ]
+    )
+    try:
+        bq_client.query(query, job_config=job_config).result()
+        return True
+    except Exception as e:
+        st.error(f"取引の削除中にエラーが発生しました: {e}")
+        return False
+
 def get_transactions_from_bq() -> pd.DataFrame:
     """BigQueryから全取引履歴を取得し、DataFrameとして返す"""
     if not bq_client: return pd.DataFrame()
@@ -101,15 +132,25 @@ def get_transactions_from_bq() -> pd.DataFrame:
     except google.api_core.exceptions.NotFound:
         init_bigquery_table()
         return pd.DataFrame()
+    
+    # データを取得した後にタイムゾーンを変換し、列名を日本語にする
     if not df.empty:
+        # UTCから東京時間に変換
+        df['transaction_date'] = df['transaction_date'].dt.tz_convert('Asia/Tokyo')
+        
+        # 表示用に列名を変更
         rename_map = {
             'transaction_date': '取引日', 'coin_id': 'コインID', 'coin_name': 'コイン名',
             'exchange': '取引所', 'transaction_type': '売買種別', 'quantity': '数量',
             'price_jpy': '価格(JPY)', 'fee_jpy': '手数料(JPY)', 'total_jpy': '合計(JPY)'
         }
-        df = df.rename(columns=rename_map)
-        df['取引日'] = df['取引日'].dt.tz_convert('Asia/Tokyo')
-    return df
+        df_display = df.rename(columns=rename_map)
+        
+        # 元の列名も保持しておく（削除処理で使うため）
+        df_display['original_coin_id'] = df['coin_id']
+        return df_display
+    return pd.DataFrame()
+
 
 def reset_bigquery_table():
     """BigQueryテーブルの全データを削除する"""
@@ -230,17 +271,14 @@ def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_ass
         st.info("保有資産がありません。")
         return
     
-    # 評価額の降順（多い順）でデータをソート
     pie_data = pie_data.sort_values(by="評価額(JPY)", ascending=False)
-        
     pie_data['評価額_display'] = pie_data['評価額(JPY)'] * rate
     
-    # ★★★ 修正箇所 ★★★
     fig = px.pie(
         pie_data, 
         values='評価額_display', 
         names='コイン名', 
-        color='コイン名',  # 色分けに使用する列を明示的に指定
+        color='コイン名',
         hole=0.5, 
         title="コイン別資産構成",
         color_discrete_map=COIN_COLORS
@@ -307,10 +345,7 @@ def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Di
         text-align: right !important;
         justify-content: flex-end !important;
     }
-    .right-align-table .stDataFrame [data-testid="stDataFrameData-row"] > div[data-col-id="0"] {
-        text-align: left !important;
-        justify-content: flex-start !important;
-    }
+    .right-align-table .stDataFrame [data-testid="stDataFrameData-row"] > div[data-col-id="0"],
     .right-align-table .stDataFrame [data-testid="stDataFrameData-row"] > div[data-col-id="1"] {
         text-align: left !important;
         justify-content: flex-start !important;
@@ -355,14 +390,10 @@ def display_transaction_form(coin_options: Dict, name_map: Dict):
             c1, c2, c3 = st.columns(3)
             with c1:
                 transaction_date = st.date_input("取引日", datetime.now())
-                selected_coin_disp_name = st.selectbox("コイン種別", options=coin_options.keys())
+                selected_coin_disp_name = st.selectbox("コイン種別", options=list(coin_options.keys()))
             with c2:
                 transaction_type = st.selectbox("売買種別", ["購入", "売却"])
-                exchange = st.selectbox(
-                    "取引所",
-                    options=EXCHANGES_ORDERED,
-                    index=2
-                )
+                exchange = st.selectbox("取引所", options=EXCHANGES_ORDERED, index=2)
             with c3:
                 quantity = st.number_input("数量", min_value=0.0, format="%.8f")
                 price = st.number_input("価格(JPY)", min_value=0.0, format="%.2f")
@@ -371,30 +402,46 @@ def display_transaction_form(coin_options: Dict, name_map: Dict):
             if st.form_submit_button("登録する"):
                 coin_id = coin_options[selected_coin_disp_name]
                 transaction = {
-                    "transaction_date": datetime.combine(transaction_date, datetime.min.time()), "coin_id": coin_id,
-                    "coin_name": name_map.get(coin_id, selected_coin_disp_name), "exchange": exchange,
-                    "transaction_type": transaction_type, "quantity": quantity, "price_jpy": price,
-                    "fee_jpy": fee, "total_jpy": quantity * price,
+                    "transaction_date": datetime.combine(transaction_date, datetime.min.time()),
+                    "coin_id": coin_id, "coin_name": name_map.get(coin_id, selected_coin_disp_name),
+                    "exchange": exchange, "transaction_type": transaction_type, "quantity": quantity,
+                    "price_jpy": price, "fee_jpy": fee, "total_jpy": quantity * price,
                 }
                 if add_transaction_to_bq(transaction):
                     st.success(f"{transaction['coin_name']}の{transaction_type}取引を登録しました。")
                     st.rerun()
 
+# ★★★ 変更点 ★★★
 def display_transaction_history(transactions_df: pd.DataFrame):
-    """取引履歴の一覧を表示する"""
+    """取引履歴の一覧を表示し、各行に削除ボタンを設置する"""
     st.subheader("🗒️ 取引履歴")
     if transactions_df.empty:
         st.info("まだ取引履歴がありません。")
         return
-    history_config = {
-        "取引日": st.column_config.DatetimeColumn("取引日時", format="YYYY/MM/DD HH:mm"),
-        "数量": st.column_config.NumberColumn(format="%.6f"),
-    }
-    st.dataframe(
-        transactions_df[['取引日', 'コイン名', '取引所', '売買種別', '数量']],
-        hide_index=True, use_container_width=True,
-        column_config=history_config
-    )
+
+    # ヘッダー行
+    cols = st.columns([3, 2, 2, 2, 2, 1])
+    headers = ["取引日時", "コイン名", "取引所", "売買種別", "数量", "操作"]
+    for col, header in zip(cols, headers):
+        col.markdown(f"**{header}**")
+
+    # データ行
+    for index, row in transactions_df.iterrows():
+        cols = st.columns([3, 2, 2, 2, 2, 1])
+        cols[0].text(row['取引日'].strftime('%Y/%m/%d %H:%M:%S'))
+        cols[1].text(row['コイン名'])
+        cols[2].text(row['取引所'])
+        cols[3].text(row['売買種別'])
+        cols[4].text(f"{row['数量']:.8f}")
+        
+        # 削除ボタン
+        if cols[5].button("削除", key=f"delete_{index}"):
+            if delete_transaction_from_bq(row):
+                st.toast(f"取引を削除しました: {row['取引日'].strftime('%Y/%m/%d')}の{row['コイン名']}取引", icon="🗑️")
+                st.rerun()
+            else:
+                st.error("取引の削除に失敗しました。")
+
 
 def display_database_management():
     """データベースのリセット機能を表示する"""
