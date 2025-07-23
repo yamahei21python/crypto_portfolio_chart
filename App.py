@@ -414,9 +414,10 @@ def display_asset_pie_chart(
     )
     
     # 中央に表示する総資産額とBTC換算額
+    # 【修正点】スマホ等の小さい画面でもレイアウトが崩れないように、フォントサイズをclamp()でレスポンシブに調整
     annotation_text = (
-        f"<span style='font-size: 2.3em; color: {deltas['jpy_delta_color']};'>{symbol}{total_asset_jpy * rate:,.0f}</span><br><br>"
-        f"<span style='font-size: 1.8em; color: {deltas['btc_delta_color']};'>{total_asset_btc:.4f} BTC</span>"
+        f"<span style='font-size: clamp(1.6rem, 4.5vw, 2.3rem); color: {deltas['jpy_delta_color']}; font-weight: bold;'>{symbol}{total_asset_jpy * rate:,.0f}</span><br>"
+        f"<span style='font-size: clamp(1.2rem, 3.5vw, 1.8rem); color: {deltas['btc_delta_color']};'>{total_asset_btc:.4f} BTC</span>"
     )
     
     fig.update_layout(
