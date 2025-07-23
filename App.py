@@ -183,7 +183,6 @@ def calculate_portfolio(transactions_df: pd.DataFrame, price_map: Dict, price_ch
 
 
 # --- UI描画関数 ---
-# ▼▼▼▼▼【変更箇所】▼▼▼▼▼
 def display_summary(total_asset_jpy: float, total_change_24h_jpy: float, currency: str, rate: float, symbol: str, price_map: Dict, price_change_map: Dict):
     """ポートフォリオのサマリーメトリクスを表示する"""
     st.header("📈 ポートフォリオサマリー")
@@ -234,7 +233,6 @@ def display_summary(total_asset_jpy: float, total_change_24h_jpy: float, currenc
             value=f"{total_asset_btc:.8f} BTC",
             delta=delta_btc_str
         )
-# ▲▲▲▲▲【変更箇所】▲▲▲▲▲
 
 def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str):
     """資産割合の円グラフを表示する"""
@@ -284,25 +282,29 @@ def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Di
     df_display['評価額'] = df_display['評価額(JPY)'] * rate
     df_display = df_display.sort_values(by='評価額', ascending=False)
 
+    # ▼▼▼【変更点1】列の順序とフォーマットを定義 ▼▼▼
     column_config = {
         "コイン名": "コイン名", "取引所": "取引所",
         "保有数量": st.column_config.NumberColumn(format="%.8f"),
-        "現在価格": st.column_config.NumberColumn(f"現在価格 ({currency.upper()})", format="%.0f"),
-        "評価額": st.column_config.NumberColumn(f"評価額 ({currency.upper()})", format="%.0f"),
+        "評価額": st.column_config.NumberColumn(f"評価額 ({currency.upper()})", format="%,.0f"),
+        "現在価格": st.column_config.NumberColumn(f"現在価格 ({currency.upper()})", format="%,.0f"),
     }
+    # ▲▲▲【変更点1】▲▲▲
 
     # 変更前の状態を保存
     if 'before_edit_df' not in st.session_state:
         st.session_state.before_edit_df = df_display
 
+    # ▼▼▼【変更点1】data_editorに渡す列の順序を「評価額」「現在価格」の順に変更 ▼▼▼
     edited_df = st.data_editor(
-        df_display[['コイン名', '取引所', '保有数量', '現在価格', '評価額']], 
-        disabled=['コイン名', '取引所', '現在価格', '評価額'], 
+        df_display[['コイン名', '取引所', '保有数量', '評価額', '現在価格']], 
+        disabled=['コイン名', '取引所', '評価額', '現在価格'], 
         column_config=column_config, 
         use_container_width=True,
         key="portfolio_editor",
         hide_index=True
     )
+    # ▲▲▲【変更点1】▲▲▲
     
     # 差分を検出して更新処理
     if not edited_df['保有数量'].equals(st.session_state.before_edit_df['保有数量']):
@@ -371,16 +373,20 @@ def display_transaction_history(transactions_df: pd.DataFrame):
         st.info("まだ取引履歴がありません。")
         return
 
+    # ▼▼▼【変更点2】「価格(JPY)」の設定を削除 ▼▼▼
     history_config = {
         "取引日": st.column_config.DatetimeColumn("取引日時", format="YYYY/MM/DD HH:mm"), 
         "数量": st.column_config.NumberColumn(format="%.6f"), 
-        "価格(JPY)": st.column_config.NumberColumn(format="%,.2f")
     }
+    # ▲▲▲【変更点2】▲▲▲
+
+    # ▼▼▼【変更点2】表示する列から「価格(JPY)」を削除 ▼▼▼
     st.dataframe(
-        transactions_df[['取引日', 'コイン名', '取引所', '売買種別', '数量', '価格(JPY)']],
+        transactions_df[['取引日', 'コイン名', '取引所', '売買種別', '数量']],
         hide_index=True, use_container_width=True,
         column_config=history_config
     )
+    # ▲▲▲【変更点2】▲▲▲
 
 def display_database_management():
     """データベースのリセット機能を表示する"""
@@ -472,14 +478,12 @@ def main():
             transactions_df, price_map, price_change_map, name_map
         )
 
-        # ▼▼▼▼▼【変更箇所】▼▼▼▼▼
         # サマリー表示
         display_summary(
             total_asset_jpy, total_change_24h_jpy, 
             selected_currency, exchange_rate, currency_symbol,
             price_map, price_change_map # BTC計算用にマップを渡す
         )
-        # ▲▲▲▲▲【変更箇所】▲▲▲▲▲
         st.markdown("---")
 
         # 資産構成と一覧
