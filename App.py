@@ -219,8 +219,6 @@ def calculate_deltas(total_asset_jpy: float, total_change_24h_jpy: float, rate: 
 
 # --- UI描画関数 ---
 
-# --- display_summary関数を削除 ---
-
 def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_asset_jpy: float, total_asset_btc: float):
     """資産割合の円グラフを表示し、中央に合計資産、各スライスに詳細情報を表示する"""
     st.subheader("📊 資産割合 (コイン別)")
@@ -236,12 +234,13 @@ def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_ass
     pie_data = pie_data.sort_values(by="評価額(JPY)", ascending=False)
         
     pie_data['評価額_display'] = pie_data['評価額(JPY)'] * rate
-    # ★★★ 変更点 ★★★
-    # color_discrete_mapにCOIN_COLORSを渡し、コインごとの色を指定
+    
+    # ★★★ 修正箇所 ★★★
     fig = px.pie(
         pie_data, 
         values='評価額_display', 
         names='コイン名', 
+        color='コイン名',  # 色分けに使用する列を明示的に指定
         hole=0.5, 
         title="コイン別資産構成",
         color_discrete_map=COIN_COLORS
@@ -253,7 +252,6 @@ def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_ass
         texttemplate=f"%{{label}} (%{{percent}})<br>{symbol}%{{value:,.0f}}",
         textfont_size=12,
         marker=dict(line=dict(color='#FFFFFF', width=2)),
-        # スライスの配置を時計回り(clockwise)に、開始位置を真上(12時)に設定
         direction='clockwise',
         rotation=0
     )
@@ -471,15 +469,9 @@ def main():
             total_asset_jpy, total_change_24h_jpy, exchange_rate, currency_symbol, price_map, price_change_map
         )
 
-        # --- 変更箇所 START ---
-        # サマリー表示部分を削除
-        # --- 変更箇所 END ---
-
         c1, c2 = st.columns([1, 1.2])
         with c1:
             display_asset_pie_chart(portfolio, exchange_rate, currency_symbol, total_asset_jpy, total_asset_btc)
-
-            # 円グラフの真下に24H変動 (選択通貨建てとBTC建て) を表示
             st.markdown(f"""
             <div style="text-align: center; margin-top: 5px; line-height: 1.4;">
                 <span style="font-size: 1.0rem; color: {jpy_delta_color};">{delta_display_str}</span>
