@@ -140,57 +140,68 @@ with tab1:
     
     st.header("📈 ポートフォリオサマリー")
     
-    # --- 表示通貨での変動額・変動率を計算 ---
     display_total_asset = total_asset_value_jpy * exchange_rate
     display_total_change_24h = total_change_24h_jpy * exchange_rate
-    
     yesterday_asset_value_jpy = total_asset_value_jpy - total_change_24h_jpy
     total_change_percentage_24h = (total_change_24h_jpy / yesterday_asset_value_jpy * 100) if yesterday_asset_value_jpy > 0 else 0
-    
     delta_display_str = f"{currency_symbol}{display_total_change_24h:,.2f} ({total_change_percentage_24h:+.2f}%)"
 
-    # --- BTC建てでの変動額・変動率を計算 ---
     btc_price_jpy = price_map_jpy.get('bitcoin', 0)
     total_asset_btc = total_asset_value_jpy / btc_price_jpy if btc_price_jpy > 0 else 0
-    
     btc_price_change_24h_jpy = price_change_24h_map_jpy.get('bitcoin', 0)
     btc_price_jpy_24h_ago = btc_price_jpy - btc_price_change_24h_jpy
-
-    total_asset_btc_24h_ago = 0
-    if btc_price_jpy_24h_ago > 0 and yesterday_asset_value_jpy > 0:
-        total_asset_btc_24h_ago = yesterday_asset_value_jpy / btc_price_jpy_24h_ago
-    
+    total_asset_btc_24h_ago = (yesterday_asset_value_jpy / btc_price_jpy_24h_ago) if btc_price_jpy_24h_ago > 0 and yesterday_asset_value_jpy > 0 else 0
     total_change_24h_btc = total_asset_btc - total_asset_btc_24h_ago
     total_change_percentage_24h_btc = (total_change_24h_btc / total_asset_btc_24h_ago * 100) if total_asset_btc_24h_ago > 0 else 0
-    
     delta_btc_str = f"{total_change_24h_btc:+.8f} BTC ({total_change_percentage_24h_btc:+.2f}%)"
 
-    # --- メトリクス表示 ---
     col1, col2 = st.columns(2)
-    col1.metric(
-        label=f"保有資産合計 ({selected_currency.upper()})",
-        value=f"{currency_symbol}{display_total_asset:,.2f}",
-        delta=delta_display_str
-    )
-    col2.metric(
-        label="保有資産合計 (BTC)",
-        value=f"{total_asset_btc:.8f} BTC",
-        delta=delta_btc_str
-    )
+    col1.metric(label=f"保有資産合計 ({selected_currency.upper()})", value=f"{currency_symbol}{display_total_asset:,.2f}", delta=delta_display_str)
+    col2.metric(label="保有資産合計 (BTC)", value=f"{total_asset_btc:.8f} BTC", delta=delta_btc_str)
     
     st.markdown("---")
     col1, col2 = st.columns([1, 1.2])
 
+    # ===【円グラフ修正箇所】===
     with col1:
         st.subheader("📊 資産割合 (コイン別)")
         if portfolio:
+            # コイン名でグループ化し、評価額(JPY)を合計
             pie_data = pd.DataFrame.from_dict(portfolio, orient='index').groupby("コイン名")["評価額(JPY)"].sum().reset_index()
+            
+            # 資産がある場合のみグラフを描画
             if not pie_data.empty and pie_data["評価額(JPY)"].sum() > 0:
-                fig = px.pie(pie_data, values='評価額(JPY)', names='コイン名', hole=0.3)
-                fig.update_traces(textposition='inside', textinfo='percent+label')
+                
+                # 表示通貨建ての評価額を計算
+                pie_data['評価額_display'] = pie_data['評価額(JPY)'] * exchange_rate
+                
+                # 円グラフを作成。valuesには表示通貨建ての評価額を指定
+                fig = px.pie(
+                    pie_data, 
+                    values='評価額_display',
+                    names='コイン名', 
+                    hole=0.3
+                )
+                
+                # texttemplateを使って表示内容をカスタマイズ
+                # {label}: コイン名, {percent}: 割合, {value:,.0f}: カンマ区切り整数にフォーマットした評価額
+                fig.update_traces(
+                    textposition='inside',
+                    texttemplate=f'%{{label}}<br>%{{percent}}<br>{currency_symbol}%{{value:,.0f}}'
+                )
+
+                # ラベルが重なり合わないように調整し、凡例を非表示にする
+                fig.update_layout(
+                    uniformtext_minsize=12, 
+                    uniformtext_mode='hide',
+                    showlegend=False
+                )
+
                 st.plotly_chart(fig, use_container_width=True)
-            else: st.info("保有資産がありません。")
-        else: st.info("取引履歴を登録すると、ここにグラフが表示されます。")
+            else: 
+                st.info("保有資産がありません。")
+        else: 
+            st.info("取引履歴を登録すると、ここにグラフが表示されます。")
     
     with col2:
         st.subheader("📋 保有資産一覧")
@@ -203,20 +214,18 @@ with tab1:
             portfolio_df_display = portfolio_df_display.sort_values(by='評価額', ascending=False)
             
             asset_list_config = {
-                "コイン名": "コイン名",
-                "取引所": "取引所",
+                "コイン名": "コイン名", "取引所": "取引所",
                 "保有数量": st.column_config.NumberColumn(format="%.8f"),
-                "現在価格": st.column_config.NumberColumn(
-                    f"現在価格 ({selected_currency.upper()})", 
-                    format="%,.2f"
-                ),
-                "評価額": st.column_config.NumberColumn(
-                    f"評価額 ({selected_currency.upper()})", 
-                    format="%,.0f"
-                ),
+                "現在価格": st.column_config.NumberColumn(f"現在価格 ({selected_currency.upper()})", format="%,.2f"),
+                "評価額": st.column_config.NumberColumn(f"評価額 ({selected_currency.upper()})", format="%,.0f"),
             }
 
-            edited_df = st.data_editor(portfolio_df_display[['コイン名', '取引所', '保有数量', '現在価格', '評価額']], disabled=['コイン名', '取引所', '現在価格', '評価額'], column_config=asset_list_config, use_container_width=True, key="portfolio_editor", hide_index=True)
+            edited_df = st.data_editor(
+                portfolio_df_display[['コイン名', '取引所', '保有数量', '現在価格', '評価額']], 
+                disabled=['コイン名', '取引所', '現在価格', '評価額'], 
+                column_config=asset_list_config, 
+                use_container_width=True, key="portfolio_editor", hide_index=True
+            )
             
             update_triggered = False
             if not edited_df.equals(portfolio_df_display[['コイン名', '取引所', '保有数量', '現在価格', '評価額']]):
@@ -274,7 +283,6 @@ with tab1:
     st.subheader("⚙️ データベース管理")
     with st.expander("データベースリセット（危険）"):
         st.warning("**警告**: この操作はデータベース上のすべての取引履歴を完全に削除します。この操作は取り消せません。")
-        # ===【重要】=== エラー箇所を修正しました ===
         if st.session_state.get('confirm_delete', False):
             st.error("本当によろしいですか？最終確認です。")
             col1, col2 = st.columns(2)
@@ -298,16 +306,9 @@ with tab2:
     watchlist_df['現在価格'] = watchlist_df['price_jpy'] * exchange_rate
     
     watchlist_config = {
-        "symbol": "シンボル",
-        "name": "コイン名",
-        "現在価格": st.column_config.NumberColumn(
-            f"現在価格 ({selected_currency.upper()})",
-            format="%,.2f"
-        ),
-        "price_change_percentage_24h": st.column_config.NumberColumn(
-            "24h変動率 (%)",
-            format="%.2f"
-        )
+        "symbol": "シンボル", "name": "コイン名",
+        "現在価格": st.column_config.NumberColumn(f"現在価格 ({selected_currency.upper()})", format="%,.2f"),
+        "price_change_percentage_24h": st.column_config.NumberColumn("24h変動率 (%)", format="%.2f")
     }
     st.dataframe(
         watchlist_df.sort_values(by='price_jpy', ascending=False)[['symbol', 'name', '現在価格', 'price_change_percentage_24h']],
