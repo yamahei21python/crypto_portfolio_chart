@@ -437,8 +437,8 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
         display_asset_pie_chart(portfolio, rate, symbol, total_asset_jpy, total_asset_btc, jpy_delta_color, btc_delta_color)
         st.markdown(f"""
         <div style="text-align: center; margin-top: 5px; line-height: 1.8;">
-        f"<span style='font-size: 2.0em; color: {jpy_delta_color};'>{symbol}{total_asset_jpy * rate:,.0f}</span><br>"
-        f"<span style='font-size: 1.5em; color: {btc_delta_color};'>{total_asset_btc:.4f} BTC</span>"
+            f"<span style='font-size: 2.0em; color: {jpy_delta_color};'>{symbol}{total_asset_jpy * rate:,.0f}</span><br>"
+            f"<span style='font-size: 1.5em; color: {btc_delta_color};'>{total_asset_btc:.4f} BTC</span>"
         </div>
         """, unsafe_allow_html=True)
     with c2:
