@@ -4,6 +4,7 @@ import plotly.express as px
 from pycoingecko import CoinGeckoAPI
 from datetime import datetime
 import sqlite3
+import numpy as np # ### 変更点 ###: 数値比較のためにnumpyをインポート
 
 # --- DB設定 ---
 DB_FILE = "portfolio.db"
@@ -78,7 +79,6 @@ st.set_page_config(
 cg = CoinGeckoAPI()
 CURRENCY_SYMBOLS = {'jpy': '¥', 'usd': '$'}
 
-# セッションステートで表示通貨を管理
 if 'currency' not in st.session_state:
     st.session_state.currency = 'jpy'
 
@@ -87,15 +87,8 @@ if 'currency' not in st.session_state:
 def get_crypto_data():
     """CoinGecko APIから時価総額上位20の仮想通貨データをJPY建てで取得する"""
     try:
-        data = cg.get_coins_markets(
-            vs_currency='jpy',
-            order='market_cap_desc',
-            per_page=20,
-            page=1
-        )
-        # 必要な情報だけを抽出
+        data = cg.get_coins_markets(vs_currency='jpy', order='market_cap_desc', per_page=20, page=1)
         df = pd.DataFrame(data, columns=['id', 'symbol', 'name', 'current_price'])
-        # カラム名を変更して基準通貨がJPYであることを明示
         df = df.rename(columns={'current_price': 'price_jpy'})
         return df
     except Exception as e:
@@ -127,42 +120,35 @@ coin_options = {f"{row['name']} ({row['symbol'].upper()})": row['id'] for index,
 price_map_jpy = crypto_data_jpy.set_index('id')['price_jpy'].to_dict()
 name_map = crypto_data_jpy.set_index('id')['name'].to_dict()
 
-# --- アプリケーションのタイトル ---
 st.title("🪙 仮想通貨ポートフォリオ管理")
 
-# --- 表示通貨の選択 ---
 selected_currency = st.radio(
-    "表示通貨を選択",
-    options=['jpy', 'usd'],
-    format_func=lambda x: x.upper(),
-    horizontal=True,
-    key='currency'
+    "表示通貨を選択", options=['jpy', 'usd'], format_func=lambda x: x.upper(),
+    horizontal=True, key='currency'
 )
-st.caption("※取引履歴の入力は常に日本円(JPY)で行ってください。")
+st.caption("※取引履歴の入力は常に日本円(JPY)で行ってください。保有資産一覧の数量は直接編集して調整できます。")
 exchange_rate = get_exchange_rate(selected_currency)
 currency_symbol = CURRENCY_SYMBOLS[selected_currency]
 
-
-# --- タブUIの作成 ---
 tab1, tab2 = st.tabs(["ポートフォリオ", "ウォッチリスト"])
 
-# --- ポートフォリオタブ ---
 with tab1:
     transactions_df = get_transactions_from_db()
 
-    # --- ポートフォリオ計算 (基準は常にJPY) ---
     portfolio = {}
     total_asset_value_jpy = 0
     
     if not transactions_df.empty:
         for coin_id in transactions_df['コインID'].unique():
             coin_tx = transactions_df[transactions_df['コインID'] == coin_id]
-            buy_quantity = coin_tx[coin_tx['売買種別'] == '購入']['数量'].sum()
-            sell_quantity = coin_tx[coin_tx['売買種別'] == '売却']['数量'].sum()
+            
+            # ### 変更点 ###: 調整取引も計算に含める
+            buy_quantity = coin_tx[coin_tx['売買種別'].isin(['購入', '調整（増）'])]['数量'].sum()
+            sell_quantity = coin_tx[coin_tx['売買種別'].isin(['売却', '調整（減）'])]['数量'].sum()
             
             current_quantity = buy_quantity - sell_quantity
             
-            if current_quantity > 0:
+            if current_quantity > 0.00000001: # 非常に小さい残高を無視
                 current_price_jpy = price_map_jpy.get(coin_id, 0)
                 current_value_jpy = current_quantity * current_price_jpy
                 
@@ -174,9 +160,7 @@ with tab1:
                 }
                 total_asset_value_jpy += current_value_jpy
     
-    # --- サマリー表示 ---
     st.header("📈 ポートフォリオサマリー")
-    
     btc_price_jpy = price_map_jpy.get('bitcoin', 0)
     total_asset_btc = total_asset_value_jpy / btc_price_jpy if btc_price_jpy > 0 else 0
     display_total_asset = total_asset_value_jpy * exchange_rate
@@ -187,7 +171,6 @@ with tab1:
     
     st.markdown("---")
 
-    # --- 保有資産の内訳 ---
     col1, col2 = st.columns([1, 1.2])
 
     with col1:
@@ -208,27 +191,71 @@ with tab1:
         st.subheader("📋 保有資産一覧")
         if portfolio:
             portfolio_df_jpy = pd.DataFrame.from_dict(portfolio, orient='index')
-            # 表示用に通貨を変換したDataFrameを作成
+            
+            # ### 変更点 ###: st.data_editor用にDataFrameを準備
+            # 変更を検知するために元のデータをコピーしておく
+            portfolio_df_before_edit = portfolio_df_jpy.copy()
+            # 表示用に通貨変換とID列の追加
             portfolio_df_display = portfolio_df_jpy.copy()
             portfolio_df_display['現在価格'] = portfolio_df_display['現在価格(JPY)'] * exchange_rate
             portfolio_df_display['評価額'] = portfolio_df_display['評価額(JPY)'] * exchange_rate
             
-            st.dataframe(
+            # ### 変更点 ###: st.dataframeからst.data_editorに変更
+            edited_df = st.data_editor(
                 portfolio_df_display[['コイン名', '保有数量', '現在価格', '評価額']],
+                disabled=['コイン名', '現在価格', '評価額'], # 保有数量以外は編集不可に
                 column_config={
-                    "保有数量": st.column_config.NumberColumn(format="%.6f"),
+                    "保有数量": st.column_config.NumberColumn(format="%.8f"), # 精度を上げて表示
                     "現在価格": st.column_config.NumberColumn(format=f"{currency_symbol}%,.2f"),
                     "評価額": st.column_config.NumberColumn(format=f"{currency_symbol}%,.0f"),
                 },
-                use_container_width=True
+                use_container_width=True,
+                key="portfolio_editor" # keyを設定して状態を保持
             )
+
+            # ### 変更点 ###: 編集内容を検知してDBに反映する処理
+            update_triggered = False
+            # 編集前と編集後のDataFrameを比較
+            for index, row in edited_df.iterrows():
+                original_quantity = portfolio_df_before_edit.loc[index, '保有数量']
+                edited_quantity = row['保有数量']
+                
+                # 浮動小数点数の比較のためにnp.iscloseを使用
+                if not np.isclose(original_quantity, edited_quantity):
+                    quantity_diff = edited_quantity - original_quantity
+                    coin_id = index
+                    coin_name = portfolio_df_before_edit.loc[index, 'コイン名']
+                    
+                    if quantity_diff > 0:
+                        transaction_type = "調整（増）"
+                    else:
+                        transaction_type = "調整（減）"
+                    
+                    # 調整取引をDBに追加（価格と手数料は0）
+                    add_transaction_to_db(
+                        date=datetime.now(),
+                        coin_id=coin_id,
+                        coin_name=coin_name,
+                        type=transaction_type,
+                        qty=abs(quantity_diff),
+                        price=0,
+                        fee=0,
+                        total=0
+                    )
+                    st.toast(f"{coin_name}の数量を調整しました: {quantity_diff:+.8f}", icon="✍️")
+                    update_triggered = True
+            
+            # 更新があった場合、ページを再読み込みして全体を反映
+            if update_triggered:
+                st.rerun()
+
         else:
             st.info("保有資産はありません。")
 
     st.markdown("---")
 
-    # --- 取引履歴の登録フォーム ---
     with st.expander("取引履歴の登録", expanded=False):
+        # (このセクションは変更なし)
         with st.form("transaction_form", clear_on_submit=True):
             st.subheader("新しい取引を登録")
             col1, col2 = st.columns(2)
@@ -246,47 +273,28 @@ with tab1:
                 coin_id = coin_options[selected_coin_name]
                 coin_name = name_map.get(coin_id, coin_id)
                 total_amount = quantity * price
-                
                 add_transaction_to_db(transaction_date, coin_id, coin_name, transaction_type, quantity, price, fee, total_amount)
-                
                 st.success(f"{coin_name}の{transaction_type}取引を登録しました。")
                 st.rerun()
 
-    # --- 取引履歴の一覧表示 ---
     st.subheader("🗒️ 取引履歴")
     if not transactions_df.empty:
         display_transactions = transactions_df.sort_values(by="取引日", ascending=False)
         st.dataframe(
             display_transactions, hide_index=True, use_container_width=True,
-            column_config={
-                "取引日": st.column_config.DateColumn("取引日", format="YYYY/MM/DD"),
-                "数量": st.column_config.NumberColumn(format="%.6f"),
-                "価格(JPY)": st.column_config.NumberColumn(format="¥%,.2f"),
-                "手数料(JPY)": st.column_config.NumberColumn(format="¥%,.2f"),
-                "合計(JPY)": st.column_config.NumberColumn(format="¥%,.0f"),
-            }
+            column_config={ "取引日": st.column_config.DateColumn("取引日", format="YYYY/MM/DD"), "数量": st.column_config.NumberColumn(format="%.6f"), "価格(JPY)": st.column_config.NumberColumn(format="¥%,.2f"), "手数料(JPY)": st.column_config.NumberColumn(format="¥%,.2f"), "合計(JPY)": st.column_config.NumberColumn(format="¥%,.0f"), }
         )
     else:
         st.info("まだ取引履歴がありません。")
 
-# --- ウォッチリストタブ ---
 with tab2:
     st.header("⭐ ウォッチリスト")
     st.info("ここに仮想通貨一覧・ランキング機能を実装する予定です。")
-    
     st.subheader(f"現在の仮想通貨価格 ({selected_currency.upper()})")
-    
-    # 表示用に価格を変換
     watchlist_df = crypto_data_jpy.copy()
     watchlist_df['現在価格'] = watchlist_df['price_jpy'] * exchange_rate
-    
     st.dataframe(
         watchlist_df[['symbol', 'name', '現在価格']],
-        hide_index=True,
-        use_container_width=True,
-        column_config={
-            "symbol": "シンボル",
-            "name": "コイン名",
-            "現在価格": st.column_config.NumberColumn(f"現在価格 ({selected_currency.upper()})", format=f"{currency_symbol}%,.2f"),
-        }
+        hide_index=True, use_container_width=True,
+        column_config={ "symbol": "シンボル", "name": "コイン名", "現在価格": st.column_config.NumberColumn(f"現在価格 ({selected_currency.upper()})", format=f"{currency_symbol}%,.2f"), }
     )
