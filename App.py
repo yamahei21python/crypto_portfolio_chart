@@ -627,14 +627,14 @@ def display_database_management(currency: str):
         if st.session_state[key]:
             st.error("本当によろしいですか？最終確認です。")
             c1, c2 = st.columns(2)
-            if c1.button("はい、すべてのデータを削除します", type="primary", use_container_width=True):
+            if c1.button("はい、すべてのデータを削除します", type="primary", use_container_width=True, key=f"confirm_reset_{currency}"):
                 reset_bigquery_table()
                 st.session_state[key] = False
                 st.rerun()
-            if c2.button("いいえ、キャンセルします", use_container_width=True):
+            if c2.button("いいえ、キャンセルします", use_container_width=True, key=f"cancel_reset_{currency}"):
                 st.session_state[key] = False
                 st.rerun()
-        elif st.button("すべての取引履歴をリセットする"):
+        elif st.button("すべての取引履歴をリセットする", key=f"initiate_reset_{currency}"):
             st.session_state[key] = True
             st.rerun()
 
