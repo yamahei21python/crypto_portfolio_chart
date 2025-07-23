@@ -233,6 +233,7 @@ def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_ass
                       annotations=[dict(text=annotation_text, x=0.5, y=0.5, font_size=16, showarrow=False)])
     st.plotly_chart(fig, use_container_width=True)
 
+# ★★★ 変更点: CSSを単純化し、divラッパーで囲む方式に変更 ★★★
 def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Dict):
     st.subheader("📋 保有資産一覧")
     if not portfolio:
@@ -245,68 +246,57 @@ def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Di
     tab_coin, tab_exchange, tab_detail = st.tabs(["コイン別", "取引所別", "詳細"])
     symbol = CURRENCY_SYMBOLS[currency]
 
-    # ★★★ 変更点: CSSセレクタを拡張し、1番目と3番目のタブにスタイルを適用 ★★★
-    st.markdown("""<style>
-    /* 1番目(コイン別)と3番目(詳細)のタブのテーブル行を右揃えに */
-    [data-testid="stTabs"] [data-baseweb="tab-panel"]:nth-of-type(1) .stDataFrame [data-testid="stDataFrameData-row"] > div,
-    [data-testid="stTabs"] [data-baseweb="tab-panel"]:nth-of-type(3) .stDataFrame [data-testid="stDataFrameData-row"] > div {
-        text-align: right !important;
-        justify-content: flex-end !important;
-    }
-    /* 1番目と3番目のタブのテーブルの最初の列(コイン名)だけ左寄せに戻す */
-    [data-testid="stTabs"] [data-baseweb="tab-panel"]:nth-of-type(1) .stDataFrame [data-testid="stDataFrameData-row"] > div[data-col-id="0"],
-    [data-testid="stTabs"] [data-baseweb="tab-panel"]:nth-of-type(3) .stDataFrame [data-testid="stDataFrameData-row"] > div[data-col-id="0"] {
-        text-align: left !important;
-        justify-content: flex-start !important;
-    }
-    /* 3番目のタブ(詳細)の2番目の列(取引所)も左寄せに戻す */
-    [data-testid="stTabs"] [data-baseweb="tab-panel"]:nth-of-type(3) .stDataFrame [data-testid="stDataFrameData-row"] > div[data-col-id="1"] {
-        text-align: left !important;
-        justify-content: flex-start !important;
-    }
-    </style>""", unsafe_allow_html=True)
-
     with tab_coin:
         coin_summary = portfolio_df.groupby("コイン名").agg(
             保有数量=('保有数量', 'sum'), 評価額_display=('評価額_display', 'sum'),
             現在価格_jpy=('現在価格(JPY)', 'first')
         ).sort_values(by='評価額_display', ascending=False).reset_index()
-        price_precision = 4 if currency == 'jpy' else 2
-        coin_summary['評価額'] = coin_summary['評価額_display'].apply(lambda x: format_currency(x, symbol, 0))
-        coin_summary['現在価格'] = (coin_summary['現在価格_jpy'] * rate).apply(lambda x: format_currency(x, symbol, price_precision))
         
-        # 数値列をTextColumnとして扱うことで、カスタムCSSによる右寄せを確実にする
-        st.dataframe(coin_summary[['コイン名', '保有数量', '評価額', '現在価格']],
-                     column_config={
-                         "コイン名": st.column_config.TextColumn("コイン名"),
-                         "保有数量": st.column_config.TextColumn("保有数量"), # NumberColumnからTextColumnに変更
-                         "評価額": st.column_config.TextColumn(f"評価額 ({currency.upper()})"),
-                         "現在価格": st.column_config.TextColumn(f"現在価格 ({currency.upper()})")},
+        price_precision = 4 if currency == 'jpy' else 2
+        coin_summary['評価額_formatted'] = coin_summary['評価額_display'].apply(lambda x: format_currency(x, symbol, 0))
+        coin_summary['現在価格_formatted'] = (coin_summary['現在価格_jpy'] * rate).apply(lambda x: format_currency(x, symbol, price_precision))
+
+        st.markdown('<div class="right-align-table">', unsafe_allow_html=True)
+        st.dataframe(coin_summary[['コイン名', '保有数量', '評価額_formatted', '現在価格_formatted']],
+                     column_config={"コイン名": "コイン名", "保有数量": "保有数量",
+                                    "評価額_formatted": f"評価額 ({currency.upper()})",
+                                    "現在価格_formatted": f"現在価格 ({currency.upper()})"},
                      hide_index=True, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
     with tab_exchange:
         exchange_summary = portfolio_df.groupby("取引所")['評価額_display'].sum().sort_values(ascending=False).reset_index()
-        exchange_summary['評価額'] = exchange_summary['評価額_display'].apply(lambda x: format_currency(x, symbol, 0))
-        st.dataframe(exchange_summary[['取引所', '評価額']],
-                     column_config={"評価額": st.column_config.TextColumn(f"評価額 ({currency.upper()})")},
+        exchange_summary['評価額_formatted'] = exchange_summary['評価額_display'].apply(lambda x: format_currency(x, symbol, 0))
+
+        st.markdown('<div class="right-align-table">', unsafe_allow_html=True)
+        st.dataframe(exchange_summary[['取引所', '評価額_formatted']],
+                     column_config={"取引所": "取引所",
+                                    "評価額_formatted": f"評価額 ({currency.upper()})"},
                      hide_index=True, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
     with tab_detail:
         df_display = portfolio_df.copy().sort_values(by='評価額_display', ascending=False)
         df_display['現在価格_display'] = df_display['現在価格(JPY)'] * rate
         price_precision = 4 if currency == 'jpy' else 2
-        df_display['評価額'] = df_display['評価額_display'].apply(lambda x: format_currency(x, symbol, 0))
-        df_display['現在価格'] = df_display['現在価格_display'].apply(lambda x: format_currency(x, symbol, price_precision))
+        df_display['評価額_formatted'] = df_display['評価額_display'].apply(lambda x: format_currency(x, symbol, 0))
+        df_display['現在価格_formatted'] = df_display['現在価格_display'].apply(lambda x: format_currency(x, symbol, price_precision))
         
         if 'before_edit_df' not in st.session_state or not st.session_state.before_edit_df.equals(df_display):
              st.session_state.before_edit_df = df_display.copy()
+        
         column_config = {"コイン名": "コイン名", "取引所": "取引所",
-                         "保有数量": st.column_config.NumberColumn(format="%.8f"),
-                         "評価額": st.column_config.TextColumn(f"評価額 ({currency.upper()})"),
-                         "現在価格": st.column_config.TextColumn(f"現在価格 ({currency.upper()})")}
-        edited_df = st.data_editor(df_display[['コイン名', '取引所', '保有数量', '評価額', '現在価格']],
-                                   disabled=['コイン名', '取引所', '評価額', '現在価格'], column_config=column_config,
-                                   use_container_width=True, key="portfolio_editor", hide_index=True)
+                         "保有数量": st.column_config.NumberColumn("保有数量", format="%.8f"),
+                         "評価額_formatted": f"評価額 ({currency.upper()})",
+                         "現在価格_formatted": f"現在価格 ({currency.upper()})"}
+
+        st.markdown('<div class="right-align-table">', unsafe_allow_html=True)
+        edited_df = st.data_editor(df_display[['コイン名', '取引所', '保有数量', '評価額_formatted', '現在価格_formatted']],
+                                   disabled=['コイン名', '取引所', '評価額_formatted', '現在価格_formatted'],
+                                   column_config=column_config, use_container_width=True,
+                                   key=f"portfolio_editor_{currency}", hide_index=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+        
         if not edited_df['保有数量'].equals(st.session_state.before_edit_df['保有数量']):
             merged_df = pd.merge(st.session_state.before_edit_df, edited_df, on=['コイン名', '取引所'], suffixes=('_before', '_after'))
             for _, row in merged_df.iterrows():
@@ -356,11 +346,13 @@ def display_transaction_history(transactions_df: pd.DataFrame):
     headers = ["取引日時", "コイン名", "取引所", "売買種別", "数量", "操作"]
     for col, header in zip(cols, headers): col.markdown(f"**{header}**")
     for index, row in transactions_df.iterrows():
+        # ボタンのキーが一意になるように工夫
+        unique_key = f"delete_{row['取引日'].timestamp()}_{row['コインID']}_{row['数量']}"
         cols = st.columns([3, 2, 2, 2, 2, 1])
         cols[0].text(row['取引日'].strftime('%Y/%m/%d %H:%M:%S'))
         cols[1].text(row['コイン名']); cols[2].text(row['取引所'])
         cols[3].text(row['売買種別']); cols[4].text(f"{row['数量']:.8f}")
-        if cols[5].button("削除", key=f"delete_{index}_{row['取引日']}"):
+        if cols[5].button("削除", key=unique_key):
             if delete_transaction_from_bq(row):
                 st.toast(f"取引を削除しました: {row['取引日'].strftime('%Y/%m/%d')}の{row['コイン名']}取引", icon="🗑️")
                 st.rerun()
@@ -372,11 +364,11 @@ def display_database_management():
         if st.session_state.get('confirm_delete', False):
             st.error("本当によろしいですか？最終確認です。")
             c1, c2 = st.columns(2)
-            if c1.button("はい、すべてのデータを削除します", type="primary"):
+            if c1.button("はい、すべてのデータを削除します", type="primary", key="confirm_delete_button"):
                 reset_bigquery_table()
                 st.session_state.confirm_delete = False
                 st.rerun()
-            if c2.button("いいえ、キャンセルします"):
+            if c2.button("いいえ、キャンセルします", key="cancel_delete_button"):
                 st.session_state.confirm_delete = False
                 st.rerun()
         else:
@@ -384,6 +376,7 @@ def display_database_management():
                 st.session_state.confirm_delete = True
                 st.rerun()
 
+# ★★★ 変更点: CSSを単純化し、divラッパーで囲む方式に変更 ★★★
 def render_watchlist_tab(market_data: pd.DataFrame, currency: str, rate: float):
     symbol = CURRENCY_SYMBOLS[currency]
     st.header("⭐ ウォッチリスト")
@@ -399,21 +392,22 @@ def render_watchlist_tab(market_data: pd.DataFrame, currency: str, rate: float):
     watchlist_df['時価総額_formatted'] = (watchlist_df['market_cap'] * rate).apply(lambda x: format_currency(x, symbol, 0))
     watchlist_df.rename(columns={'name': '銘柄', '現在価格_formatted': '現在価格', '時価総額_formatted': '時価総額',
                                  'price_change_percentage_24h': '24h変動率'}, inplace=True)
+    
     column_config = {
-        "銘柄": st.column_config.TextColumn("銘柄"),
-        "現在価格": st.column_config.TextColumn(f"現在価格 ({currency.upper()})"),
-        "時価総額": st.column_config.TextColumn(f"時価総額 ({currency.upper()})"),
+        "銘柄": "銘柄", "現在価格": f"現在価格 ({currency.upper()})",
+        "時価総額": f"時価総額 ({currency.upper()})",
         "24h変動率": st.column_config.NumberColumn("24h変動率 (%)", format="%.2f%%")}
+
+    st.markdown('<div class="right-align-table">', unsafe_allow_html=True)
     st.dataframe(
         watchlist_df.sort_values(by='market_cap', ascending=False)[['銘柄', '現在価格', '時価総額', '24h変動率']],
         hide_index=True, use_container_width=True, column_config=column_config)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-# ★★★ 新設: ポートフォリオページの描画をまとめた関数 ★★★
+
 def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFrame, currency: str):
-    """指定された通貨でポートフォリオページ全体を描画する"""
     rate = get_exchange_rate(currency)
     symbol = CURRENCY_SYMBOLS[currency]
-    
     price_map = market_data.set_index('id')['price_jpy'].to_dict()
     price_change_map = market_data.set_index('id')['price_change_24h_jpy'].to_dict()
     name_map = market_data.set_index('id')['name'].to_dict()
@@ -448,6 +442,21 @@ def main():
     if not bq_client: st.stop()
     st.title("🪙 仮想通貨ポートフォリオ管理アプリ")
     
+    # ★★★ 変更点: すべてのテーブルを右揃えにするためのCSSをここに定義 ★★★
+    st.markdown("""
+        <style>
+            .right-align-table .stDataFrame [data-testid="stDataFrameData-row"] > div {
+                text-align: right !important;
+                justify-content: flex-end !important;
+            }
+            /* 最初の列だけは左揃えに戻す (銘柄名など) */
+            .right-align-table .stDataFrame [data-testid="stDataFrameData-row"] > div:first-child {
+                text-align: left !important;
+                justify-content: flex-start !important;
+            }
+        </style>
+    """, unsafe_allow_html=True)
+    
     if 'confirm_delete' not in st.session_state: st.session_state.confirm_delete = False
 
     market_data = get_market_data()
@@ -458,7 +467,6 @@ def main():
     init_bigquery_table()
     transactions_df = get_transactions_from_bq()
 
-    # ★★★ 変更点: ラジオボタンを削除し、4つのタブを生成 ★★★
     tab_pf_jpy, tab_wl_jpy, tab_pf_usd, tab_wl_usd = st.tabs([
         "ポートフォリオ (JPY)", "ウォッチリスト (JPY)", 
         "ポートフォリオ (USD)", "ウォッチリスト (USD)"
