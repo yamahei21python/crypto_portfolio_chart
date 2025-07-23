@@ -104,7 +104,6 @@ name_map = crypto_data_jpy.set_index('id')['name'].to_dict()
 # ★確認用★ タイトルを少し変更しました。これが反映されるかご確認ください。
 st.title("🪙 仮想通貨ポートフォリオ管理アプリ") 
 selected_currency = st.radio("表示通貨を選択", options=['jpy', 'usd'], format_func=lambda x: x.upper(), horizontal=True, key='currency')
-st.caption("※取引履歴の入力は常に日本円(JPY)で行ってください。保有資産一覧の数量は直接編集して調整できます。")
 exchange_rate = get_exchange_rate(selected_currency)
 currency_symbol = CURRENCY_SYMBOLS[selected_currency]
 init_bigquery_table()
