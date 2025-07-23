@@ -208,31 +208,56 @@ def calculate_deltas(total_asset_jpy: float, total_change_24h_jpy: float, rate: 
 # --- display_summary関数を削除 ---
 
 def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_asset_jpy: float, total_asset_btc: float):
-    """資産割合の円グラフを表示し、中央に合計資産、各スライスに詳細情報を表示する"""
-    st.subheader("📊 資産構成")
+    """
+    資産割合の円グラフを表示する。
+    小さい割合の項目を「その他」にまとめ、ラベルを外側に表示するスタイル。
+    """
+    st.subheader("📊 資産割合 (コイン別)")
     if not portfolio:
         st.info("取引履歴を登録すると、ここにグラフが表示されます。")
         return
+    
+    # --- 変更点①: 小さい項目を「その他」にまとめる処理 ---
     pie_data = pd.DataFrame.from_dict(portfolio, orient='index').groupby("コイン名")["評価額(JPY)"].sum().reset_index()
     if pie_data.empty or pie_data["評価額(JPY)"].sum() <= 0:
         st.info("保有資産がありません。")
         return
+
+    # しきい値（この割合未満のものを「その他」にまとめる）
+    threshold = 0.02  # 2%
+    total_value = pie_data["評価額(JPY)"].sum()
     
-    # 評価額の降順（多い順）でデータをソート
-    pie_data = pie_data.sort_values(by="評価額(JPY)", ascending=False)
-        
-    pie_data['評価額_display'] = pie_data['評価額(JPY)'] * rate
-    fig = px.pie(pie_data, values='評価額_display', names='コイン名', hole=0.5)
+    # しきい値以上のデータ
+    main_data = pie_data[pie_data["評価額(JPY)"] / total_value >= threshold]
+    # しきい値未満のデータ
+    other_data = pie_data[pie_data["評価額(JPY)"] / total_value < threshold]
+
+    # しきい値未満のデータが存在する場合、「その他」として集計
+    if not other_data.empty:
+        other_sum = other_data['評価額(JPY)'].sum()
+        other_row = pd.DataFrame([{'コイン名': 'その他', '評価額(JPY)': other_sum}])
+        # main_dataとother_rowを結合
+        final_pie_data = pd.concat([main_data, other_row], ignore_index=True)
+    else:
+        final_pie_data = main_data
+
+    # 評価額で降順にソート
+    final_pie_data = final_pie_data.sort_values(by="評価額(JPY)", ascending=False)
+    # --- ここまでが「その他」処理 ---
+
+    final_pie_data['評価額_display'] = final_pie_data['評価額(JPY)'] * rate
     
+    fig = px.pie(final_pie_data, values='評価額_display', names='コイン名', hole=0.5, title="コイン別資産構成")
+    
+    # --- 変更点②: ラベルを外側に表示し、テキスト情報を調整 ---
     fig.update_traces(
-        textposition='inside',
-        textinfo='text',
-        texttemplate=f"%{{label}} (%{{percent}})<br>{symbol}%{{value:,.0f}}",
+        textposition='outside',  # ラベルを外側に
+        textinfo='percent+label',  # 表示情報をパーセントとラベル名に
         textfont_size=12,
         marker=dict(line=dict(color='#FFFFFF', width=2)),
-        # スライスの配置を時計回り(clockwise)に、開始位置を真上(12時)に設定
         direction='clockwise',
-        rotation=0
+        rotation=0,
+        pull=[0.02] * len(final_pie_data) # 各スライスを少し引き出す
     )
     
     annotation_text = (
@@ -242,10 +267,8 @@ def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_ass
     )
 
     fig.update_layout(
-        uniformtext_minsize=10, 
-        uniformtext_mode='hide',
         showlegend=False,
-        margin=dict(t=30, b=0, l=0, r=0),
+        margin=dict(t=50, b=20, l=20, r=20), # マージンを調整してラベルが見切れないようにする
         annotations=[dict(
             text=annotation_text,
             x=0.5, y=0.5, font_size=16, showarrow=False
