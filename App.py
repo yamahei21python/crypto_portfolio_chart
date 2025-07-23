@@ -243,8 +243,8 @@ def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_ass
     
     # ★★★ 変更点: アノテーションテキストに色情報を追加 ★★★
     annotation_text = (
-        f"<span style='font-size: 2.0em; color: {jpy_delta_color};'>{symbol}{total_asset_jpy * rate:,.0f}</span><br>"
-        f"<span style='font-size: 1.5em; color: {btc_delta_color};'>{total_asset_btc:.4f} BTC</span>"
+        f"<p style='font-size: 2.0em; color: {jpy_delta_color}; margin: 0; margin-bottom: 8px;'>{symbol}{total_asset_jpy * rate:,.0f}</p>"
+        f"<p style='font-size: 1.5em; color: {btc_delta_color}; margin: 0;'>{total_asset_btc:.4f} BTC</p>"
     )
     
     fig.update_layout(uniformtext_minsize=10, uniformtext_mode='hide', showlegend=False,
