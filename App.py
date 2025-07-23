@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 from pycoingecko import CoinGeckoAPI
 from datetime import datetime, timezone
 import numpy as np
@@ -141,9 +140,8 @@ def reset_bigquery_table():
 @st.cache_data(ttl=600)
 def get_market_data() -> pd.DataFrame:
     try:
-        # 'image'列を追加してアイコンURLを取得
         data = cg_client.get_coins_markets(vs_currency='jpy', order='market_cap_desc', per_page=20, page=1)
-        df = pd.DataFrame(data, columns=['id', 'symbol', 'name', 'image', 'current_price', 'price_change_24h', 'price_change_percentage_24h', 'market_cap'])
+        df = pd.DataFrame(data, columns=['id', 'symbol', 'name', 'current_price', 'price_change_24h', 'price_change_percentage_24h', 'market_cap'])
         return df.rename(columns={'current_price': 'price_jpy', 'price_change_24h': 'price_change_24h_jpy'})
     except Exception as e:
         st.error(f"価格データの取得に失敗しました: {e}")
@@ -161,46 +159,10 @@ def get_exchange_rate(target_currency: str) -> float:
         st.warning(f"為替レートの取得に失敗しました: {e}")
         return 1.0
 
-# ★★★ スパークライン用データ取得関数を修正 ★★★
-@st.cache_data(ttl=3600)
-def get_sparkline_data(coin_id: str) -> List[float]:
-    """過去24時間の価格データを取得する"""
-    try:
-        # days=7 を days=1 に変更
-        chart_data = cg_client.get_coin_market_chart_by_id(
-            id=coin_id, vs_currency='jpy', days=1
-        )
-        # 24時間データは通常5分間隔。全部表示すると重いので間引く
-        prices = [p[1] for p in chart_data['prices']]
-        return prices[::2]  # 2点に1点をサンプリング
-    except Exception:
-        return []
 
 # --- データ処理 & フォーマット関数 ---
 def format_currency(value: float, symbol: str, precision: int = 0) -> str:
     return f"{symbol}{value:,.{precision}f}"
-
-def create_sparkline_figure(data: List[float], price_change: float) -> go.Figure:
-    """PlotlyでスパークラインのFigureオブジェクトを生成する"""
-    color = "#26A69A" if price_change >= 0 else "#EF5350"  # 緑 or 赤
-    fig = go.Figure(
-        data=go.Scatter(
-            y=data,
-            mode='lines',
-            line=dict(color=color, width=3),
-            fill='tozeroy',  # 線の色で領域を薄く塗りつぶす
-            fillcolor=f'rgba({int(color[1:3], 16)}, {int(color[3:5], 16)}, {int(color[5:7], 16)}, 0.1)'
-        )
-    )
-    fig.update_layout(
-        width=150, height=50,
-        margin=dict(l=0, r=0, t=0, b=0),
-        xaxis=dict(visible=False),
-        yaxis=dict(visible=False),
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-    )
-    return fig
 
 def calculate_portfolio(transactions_df: pd.DataFrame, price_map: Dict, price_change_map: Dict, name_map: Dict) -> (Dict, float, float):
     portfolio, total_asset_jpy, total_change_24h_jpy = {}, 0, 0
@@ -252,16 +214,18 @@ RIGHT_ALIGN_STYLE = """
             text-align: right !important;
             justify-content: flex-end !important;
         }
-        /* No., Icon, Name列は左寄せに */
-        .right-align-table .stDataFrame [data-testid="stDataFrameData-row"] > div:nth-child(1),
-        .right-align-table .stDataFrame [data-testid="stDataFrameData-row"] > div:nth-child(2),
-        .right-align-table .stDataFrame [data-testid="stDataFrameData-row"] > div:nth-child(3) {
+        .right-align-table .stDataFrame [data-testid="stDataFrameData-row"] > div:first-child {
+            text-align: left !important;
+            justify-content: flex-start !important;
+        }
+        .right-align-table .stDataFrame [data-testid="stDataFrameData-row"] > div[data-col-id="1"]:not(:first-child) {
             text-align: left !important;
             justify-content: flex-start !important;
         }
     </style>
 """
 
+# ★★★ 変更点: 引数に jpy_delta_color と btc_delta_color を追加 ★★★
 def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_asset_jpy: float, total_asset_btc: float, jpy_delta_color: str, btc_delta_color: str):
     st.subheader("📊 資産構成")
     if not portfolio:
@@ -277,6 +241,7 @@ def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_ass
     fig.update_traces(textposition='inside', textinfo='text', texttemplate=f"%{{label}} (%{{percent}})<br>{symbol}%{{value:,.0f}}",
                       textfont_size=12, marker=dict(line=dict(color='#FFFFFF', width=2)), direction='clockwise', rotation=0)
     
+    # ★★★ 変更点: アノテーションテキストに色情報を追加 ★★★
     annotation_text = (
         f"<span style='font-size: 2.3em; color: {jpy_delta_color};'>{symbol}{total_asset_jpy * rate:,.0f}</span><br><br>"
         f"<span style='font-size: 1.8em; color: {btc_delta_color};'>{total_asset_btc:.4f} BTC</span>"
@@ -426,64 +391,37 @@ def display_database_management(currency: str):
                 st.session_state[confirm_key] = True
                 st.rerun()
 
-# ★★★ ウォッチリスト描画関数を大幅に修正 ★★★
+# ★★★ 変更点 ★★★
 def render_watchlist_tab(market_data: pd.DataFrame, currency: str, rate: float):
     st.header(f"時価総額トップ20 ({currency.upper()})")
-
+    
     if 'market_cap' not in market_data.columns:
         st.warning("時価総額データが取得できませんでした。")
         return
-
+        
     st.markdown(RIGHT_ALIGN_STYLE, unsafe_allow_html=True)
-    watchlist_df = market_data.copy().sort_values(by='market_cap', ascending=False).reset_index(drop=True)
+    watchlist_df = market_data.copy()
     symbol = CURRENCY_SYMBOLS[currency]
     price_precision = 4 if currency == 'jpy' else 2
-
-    # --- スパークライン生成処理 ---
-    progress_text = f"スパークライン用データ取得中 (過去24時間)... しばらくお待ちください"
-    progress_bar = st.progress(0, text=progress_text)
-    sparklines = []
-
-    for i, row in watchlist_df.iterrows():
-        sparkline_data = get_sparkline_data(row['id'])
-        if sparkline_data:
-            fig = create_sparkline_figure(sparkline_data, row['price_change_percentage_24h'])
-            img_bytes = fig.to_image(format="png", engine="kaleido")
-            sparklines.append(img_bytes)
-        else:
-            sparklines.append(None)
-        progress_bar.progress((i + 1) / len(watchlist_df), text=progress_text)
-
-    progress_bar.empty()
-    watchlist_df['sparkline'] = sparklines
-    # --- スパークライン生成処理ここまで ---
-
-    watchlist_df['#'] = watchlist_df.index + 1
-    # 銘柄名とシンボルを改行で連結
-    watchlist_df['銘柄'] = watchlist_df.apply(lambda row: f"{row['name']}\n{row['symbol'].upper()}", axis=1)
     watchlist_df['現在価格_formatted'] = (watchlist_df['price_jpy'] * rate).apply(lambda x: format_currency(x, symbol, price_precision))
     watchlist_df['時価総額_formatted'] = (watchlist_df['market_cap'] * rate).apply(lambda x: format_currency(x, symbol, 0))
-    watchlist_df.rename(columns={'現在価格_formatted': '現在価格', '時価総額_formatted': '時価総額',
+    watchlist_df.rename(columns={'name': '銘柄', '現在価格_formatted': '現在価格', '時価総額_formatted': '時価総額',
                                  'price_change_percentage_24h': '24h変動率'}, inplace=True)
-    
     column_config = {
-        "#": st.column_config.NumberColumn("No.", width="small"),
-        "image": st.column_config.ImageColumn(" ", width="small"),
-        "銘柄": st.column_config.TextColumn("銘柄", width="medium"),
-        "時価総額": st.column_config.TextColumn(f"時価総額 ({currency.upper()})", width="medium"),
-        "現在価格": st.column_config.TextColumn(f"現在価格 ({currency.upper()})", width="medium"),
-        "sparkline": st.column_config.ImageColumn("24時間チャート", width="medium"), # ラベルを修正
-        "24h変動率": st.column_config.NumberColumn("24h変動率 (%)", format="%.2f%%", width="small")
-    }
-
-    df_to_display = watchlist_df[['#', 'image', '銘柄', '現在価格', 'sparkline', '24h変動率']]
-    height = (len(df_to_display) + 1) * 60 + 3 # アイコンと2行表示のため高さを調整
+        "銘柄": "銘柄", "現在価格": f"現在価格 ({currency.upper()})",
+        "時価総額": f"時価総額 ({currency.upper()})",
+        "24h変動率": st.column_config.NumberColumn("24h変動率 (%)", format="%.2f%%")}
 
     st.markdown('<div class="right-align-table">', unsafe_allow_html=True)
+    
+    # 全ての行が表示されるように高さを指定
+    df_to_display = watchlist_df.sort_values(by='market_cap', ascending=False)[['銘柄', '現在価格', '時価総額', '24h変動率']]
+    # 行数に基づいて高さを計算 (1行あたり約35px + ヘッダー分)
+    height = (len(df_to_display) + 1) * 35 + 3
     st.dataframe(
         df_to_display,
-        hide_index=True,
-        use_container_width=True,
+        hide_index=True, 
+        use_container_width=True, 
         column_config=column_config,
         height=height
     )
@@ -504,6 +442,7 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
 
     c1, c2 = st.columns([1, 1.2])
     with c1:
+        # ★★★ 変更点: display_asset_pie_chart に jpy_delta_color と btc_delta_color を渡す ★★★
         display_asset_pie_chart(portfolio, rate, symbol, total_asset_jpy, total_asset_btc, jpy_delta_color, btc_delta_color)
         st.markdown(f"""
         <div style="text-align: center; margin-top: 5px; line-height: 1.4;">
