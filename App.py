@@ -238,7 +238,7 @@ def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_ass
         marker=dict(line=dict(color='#FFFFFF', width=2)),
         # スライスの配置を時計回り(clockwise)に、開始位置を真上(12時)に設定
         direction='clockwise',
-        rotation=90
+        rotation=0
     )
     
     annotation_text = (
