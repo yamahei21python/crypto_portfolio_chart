@@ -406,11 +406,11 @@ def render_watchlist_tab(market_data: pd.DataFrame, currency: str, rate: float):
         "銘柄": "銘柄",
         "現在価格": st.column_config.NumberColumn(
             f"現在価格 ({currency.upper()})",
-            format=f"{symbol}%,.2f" if currency == 'usd' else f"{symbol}%,.4f"
+            format=f"{symbol}%.2f" if currency == 'usd' else f"{symbol}%.4f"
         ),
         "時価総額": st.column_config.NumberColumn(
             f"時価総額 ({currency.upper()})",
-            format=f"{symbol}%,.0f"
+            format=f"{symbol}%.0f"
         ),
         "24h変動率": st.column_config.NumberColumn(
             "24h変動率 (%)",
