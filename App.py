@@ -213,7 +213,6 @@ def display_summary(total_asset_jpy: float, currency: str, rate: float, symbol: 
     col1.metric(f"保有資産合計 ({currency.upper()})", f"{symbol}{display_total_asset:,.2f}", delta_display_str)
     col2.metric("保有資産合計 (BTC)", f"{total_asset_btc:.8f} BTC", delta_btc_str)
 
-# ▼▼▼【変更箇所】円グラフのソート順と開始位置を調整 ▼▼▼
 def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_asset_jpy: float, total_asset_btc: float):
     """資産割合の円グラフを表示し、中央に合計資産、各スライスに詳細情報を表示する"""
     st.subheader("📊 資産割合 (コイン別)")
@@ -237,7 +236,7 @@ def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_ass
         texttemplate=f"%{{label}} (%{{percent}})<br>{symbol}%{{value:,.0f}}",
         textfont_size=12,
         marker=dict(line=dict(color='#FFFFFF', width=2)),
-        # スライスの配置を時計回り(clockwise)に、開始位置を真上(90度)に設定
+        # スライスの配置を時計回り(clockwise)に、開始位置を真上(12時)に設定
         direction='clockwise',
         rotation=90
     )
@@ -259,7 +258,6 @@ def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_ass
         )]
     )
     st.plotly_chart(fig, use_container_width=True)
-# ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
 def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Dict):
     """保有資産一覧をdata_editorで表示し、数量調整機能を提供する"""
