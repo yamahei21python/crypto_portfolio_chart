@@ -271,6 +271,7 @@ def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_ass
                       annotations=[dict(text=annotation_text, x=0.5, y=0.5, font_size=16, showarrow=False)])
     st.plotly_chart(fig, use_container_width=True)
 
+# ★★★ 変更点 ★★★
 def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Dict):
     """保有資産一覧をタブ形式で表示する（コイン別、取引所別、詳細）"""
     st.subheader("📋 保有資産一覧")
@@ -279,9 +280,6 @@ def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Di
         return
 
     portfolio_df = pd.DataFrame.from_dict(portfolio, orient='index')
-    
-    # ★★★ 修正箇所 ★★★
-    # MultiIndexをリセットして通常の列に変換し、インデックスを振り直す
     portfolio_df = portfolio_df.reset_index(drop=True)
 
     portfolio_df['評価額_display'] = portfolio_df['評価額(JPY)'] * rate
@@ -290,15 +288,30 @@ def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Di
     symbol = CURRENCY_SYMBOLS[currency]
 
     with tab_coin:
-        coin_summary = portfolio_df.groupby("コイン名")['評価額_display'].sum().sort_values(ascending=False).reset_index()
+        # コイン名でグループ化し、数量と評価額は合計、現在価格は最初の値を取得
+        coin_summary = portfolio_df.groupby("コイン名").agg(
+            保有数量=('保有数量', 'sum'),
+            評価額_display=('評価額_display', 'sum'),
+            現在価格_jpy=('現在価格(JPY)', 'first') # 元のJPY価格を取得
+        ).sort_values(by='評価額_display', ascending=False).reset_index()
+
+        # 表示用のフォーマット済み列を作成
         coin_summary['評価額'] = coin_summary['評価額_display'].apply(lambda x: format_jpy(x, symbol))
+        coin_summary['現在価格'] = (coin_summary['現在価格_jpy'] * rate).apply(lambda x: format_jpy(x, symbol))
+        
         st.dataframe(
-            coin_summary[['コイン名', '評価額']],
-            column_config={"評価額": st.column_config.TextColumn(f"評価額 ({currency.upper()})")},
+            coin_summary[['コイン名', '保有数量', '評価額', '現在価格']],
+            column_config={
+                "コイン名": "コイン名",
+                "保有数量": st.column_config.NumberColumn("保有数量", format="%.8f"),
+                "評価額": st.column_config.TextColumn(f"評価額 ({currency.upper()})"),
+                "現在価格": st.column_config.TextColumn(f"現在価格 ({currency.upper()})")
+            },
             hide_index=True, use_container_width=True
         )
 
     with tab_exchange:
+        # 取引所別は評価額の合計のみ表示（異なるコインの数量や価格の合計は無意味なため）
         exchange_summary = portfolio_df.groupby("取引所")['評価額_display'].sum().sort_values(ascending=False).reset_index()
         exchange_summary['評価額'] = exchange_summary['評価額_display'].apply(lambda x: format_jpy(x, symbol))
         st.dataframe(
@@ -308,6 +321,7 @@ def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Di
         )
 
     with tab_detail:
+        # 詳細タブは変更なし
         df_display = portfolio_df.copy().sort_values(by='評価額_display', ascending=False)
         df_display['現在価格_display'] = df_display['現在価格(JPY)'] * rate
         
