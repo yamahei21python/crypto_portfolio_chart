@@ -204,14 +204,8 @@ def calculate_deltas(total_asset_jpy: float, total_change_24h_jpy: float, rate: 
     return delta_display_str, jpy_delta_color, delta_btc_str, btc_delta_color
 
 # --- UI描画関数 ---
-def display_summary(total_asset_jpy: float, currency: str, rate: float, symbol: str, total_asset_btc: float, delta_display_str: str, delta_btc_str: str):
-    """ポートフォリオのサマリーメトリクスを表示する"""
-    st.header("📈 ポートフォリオサマリー")
-    display_total_asset = total_asset_jpy * rate
-    
-    col1, col2 = st.columns(2)
-    col1.metric(f"保有資産合計 ({currency.upper()})", f"{symbol}{display_total_asset:,.2f}", delta_display_str)
-    col2.metric("保有資産合計 (BTC)", f"{total_asset_btc:.8f} BTC", delta_btc_str)
+
+# --- display_summary関数を削除 ---
 
 def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_asset_jpy: float, total_asset_btc: float):
     """資産割合の円グラフを表示し、中央に合計資産、各スライスに詳細情報を表示する"""
@@ -454,15 +448,14 @@ def main():
             total_asset_jpy, total_change_24h_jpy, exchange_rate, currency_symbol, price_map, price_change_map
         )
 
-        # サマリー表示
-        display_summary(total_asset_jpy, selected_currency, exchange_rate, currency_symbol, total_asset_btc, delta_display_str, delta_btc_str)
-        st.markdown("---")
+        # --- 変更箇所 START ---
+        # サマリー表示部分を削除
+        # --- 変更箇所 END ---
 
         c1, c2 = st.columns([1, 1.2])
         with c1:
             display_asset_pie_chart(portfolio, exchange_rate, currency_symbol, total_asset_jpy, total_asset_btc)
 
-            # --- 変更箇所 START ---
             # 円グラフの真下に24H変動 (選択通貨建てとBTC建て) を表示
             st.markdown(f"""
             <div style="text-align: center; margin-top: 5px; line-height: 1.4;">
@@ -470,8 +463,7 @@ def main():
                 <span style="font-size: 1.0rem; color: {btc_delta_color}; margin-left: 12px;">{delta_btc_str}</span>
             </div>
             """, unsafe_allow_html=True)
-            # --- 変更箇所 END ---
-
+            
         with c2:
             display_asset_list(portfolio, selected_currency, exchange_rate, name_map)
 
