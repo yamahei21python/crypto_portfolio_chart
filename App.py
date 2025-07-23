@@ -58,9 +58,7 @@ def get_transactions_from_bq():
         df['取引日'] = df['取引日'].dt.tz_convert('Asia/Tokyo')
     return df
 
-# ### 変更点: DBリセット用の関数を追加 ###
 def reset_bigquery_table():
-    """BigQueryのtransactionsテーブルを空にする"""
     query = f"TRUNCATE TABLE `{TABLE_FULL_ID}`"
     try:
         client.query(query).result()
@@ -156,8 +154,25 @@ with tab1:
             portfolio_df_display['現在価格'] = portfolio_df_display['現在価格(JPY)'] * exchange_rate
             portfolio_df_display['評価額'] = portfolio_df_display['評価額(JPY)'] * exchange_rate
             portfolio_df_display = portfolio_df_display.sort_values(by='評価額', ascending=False)
-            asset_list_config = {"コイン名": "コイン名", "取引所": "取引所", "保有数量": st.column_config.NumberColumn(format="%.8f"), "現在価格": st.column_config.NumberColumn(f"現在価格 ({selected_currency.upper()})", format=f"{currency_symbol}%,.2f"), "評価額": st.column_config.NumberColumn(f"評価額 ({selected_currency.upper()})", format=f"{currency_symbol}%,.0f"),}
+            
+            # ### 変更点: formatを最適化 ###
+            asset_list_config = {
+                "コイン名": "コイン名", "取引所": "取引所",
+                "保有数量": st.column_config.NumberColumn(format="%.8f"),
+                # 現在価格: 小数点以下2桁
+                "現在価格": st.column_config.NumberColumn(
+                    f"現在価格 ({selected_currency.upper()})", 
+                    format=f"{currency_symbol}%,.2f"
+                ),
+                # 評価額: 整数
+                "評価額": st.column_config.NumberColumn(
+                    f"評価額 ({selected_currency.upper()})", 
+                    format=f"{currency_symbol}%,.0f"
+                ),
+            }
+
             edited_df = st.data_editor(portfolio_df_display[['コイン名', '取引所', '保有数量', '現在価格', '評価額']], disabled=['コイン名', '取引所', '現在価格', '評価額'], column_config=asset_list_config, use_container_width=True, key="portfolio_editor", hide_index=True)
+            
             update_triggered = False
             if not edited_df.equals(portfolio_df_display):
                 merged_df = pd.merge(portfolio_df_before_edit, edited_df, on=['コイン名', '取引所'], suffixes=('_before', '_after'))
@@ -193,20 +208,23 @@ with tab1:
 
     st.subheader("🗒️ 取引履歴")
     if not transactions_df.empty:
-        # ### 変更点: 価格(JPY)列を非表示 ###
-        history_config = {"取引日": st.column_config.DatetimeColumn(format="YYYY/MM/DD HH:mm"), "数量": st.column_config.NumberColumn(format="%.6f")}
+        # ### 変更点: 価格列を再表示し、フォーマットを最適化 ###
+        history_config = {
+            "取引日": st.column_config.DatetimeColumn(format="YYYY/MM/DD HH:mm"), 
+            "数量": st.column_config.NumberColumn(format="%.6f"), 
+            # JPY建て価格は小数点以下2桁
+            "価格(JPY)": st.column_config.NumberColumn(format="¥%,.2f")
+        }
         st.dataframe(
-            transactions_df[['取引日', 'コイン名', '取引所', '売買種別', '数量']],
+            transactions_df[['取引日', 'コイン名', '取引所', '売買種別', '数量', '価格(JPY)']],
             hide_index=True, use_container_width=True,
             column_config=history_config)
     else: st.info("まだ取引履歴がありません。")
 
-    # ### 変更点: DBリセットボタンを追加 ###
     st.markdown("---")
     st.subheader("⚙️ データベース管理")
     with st.expander("データベースリセット（危険）"):
         st.warning("**警告**: この操作はデータベース上のすべての取引履歴を完全に削除します。この操作は取り消せません。")
-        
         if st.session_state.confirm_delete:
             st.error("本当によろしいですか？最終確認です。")
             col1, col2 = st.columns(2)
@@ -230,7 +248,15 @@ with tab2:
     st.subheader(f"現在の仮想通貨価格 ({selected_currency.upper()})")
     watchlist_df = crypto_data_jpy.copy()
     watchlist_df['現在価格'] = watchlist_df['price_jpy'] * exchange_rate
-    watchlist_config = {"symbol": "シンボル", "name": "コイン名", "現在価格": st.column_config.NumberColumn(f"現在価格 ({selected_currency.upper()})", format=f"{currency_symbol}%,.2f")}
+    
+    # ### 変更点: formatを最適化 ###
+    watchlist_config = {
+        "symbol": "シンボル", "name": "コイン名",
+        "現在価格": st.column_config.NumberColumn(
+            f"現在価格 ({selected_currency.upper()})", 
+            format=f"{currency_symbol}%,.2f"
+        )
+    }
     st.dataframe(
         watchlist_df.sort_values(by='現在価格', ascending=False)[['symbol', 'name', '現在価格']], hide_index=True, use_container_width=True,
         column_config=watchlist_config)
