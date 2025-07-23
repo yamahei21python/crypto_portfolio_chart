@@ -334,7 +334,7 @@ def display_transaction_form(coin_options: Dict, name_map: Dict, currency: str):
                 selected_coin_disp_name = st.selectbox("コイン種別", options=list(coin_options.keys()), key=f"coin_{currency}")
             with c2:
                 transaction_type = st.selectbox("売買種別", ["購入", "売却"], key=f"type_{currency}")
-                exchange = st.selectbox("取引所", options=EXCHANGES_ORDERED, index=2, key=f"exchange_{currency}")
+                exchange = st.selectbox("取引所", options=EXCHANGES_ORDERED, index=0, key=f"exchange_{currency}")
             with c3:
                 quantity = st.number_input("数量", min_value=0.0, format="%.8f", key=f"qty_{currency}")
                 price = st.number_input("価格(JPY)", min_value=0.0, format="%.2f", key=f"price_{currency}")
