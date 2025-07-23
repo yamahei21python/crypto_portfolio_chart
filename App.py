@@ -462,41 +462,16 @@ def main():
         with c1:
             display_asset_pie_chart(portfolio, exchange_rate, currency_symbol, total_asset_jpy, total_asset_btc)
 
-            st.divider()
-            d1, d2 = st.columns(2)
-            with d1:
-                try:
-                    jpy_value_part, jpy_delta_part = delta_display_str.rsplit(' (', 1)
-                    jpy_delta_part = jpy_delta_part[:-1]
-                except ValueError:
-                    jpy_value_part = delta_display_str
-                    jpy_delta_part = None
-
-                d1.metric(
-                    label=f"24H変動 ({selected_currency.upper()})",
-                    value=jpy_value_part,
-                    delta=jpy_delta_part
-                )
-
-            with d2:
-                if delta_btc_str != "N/A":
-                    try:
-                        btc_value_part, btc_delta_part = delta_btc_str.rsplit(' (', 1)
-                        btc_delta_part = btc_delta_part[:-1]
-                    except ValueError:
-                        btc_value_part = delta_btc_str
-                        btc_delta_part = None
-
-                    d2.metric(
-                        label="24H変動 (BTC)",
-                        value=btc_value_part,
-                        delta=btc_delta_part
-                    )
-                else:
-                    d2.metric(
-                        label="24H変動 (BTC)",
-                        value="N/A"
-                    )
+            # --- 変更箇所 START ---
+            # 円グラフの真下に総資産と24H変動を表示 (ユーザー指定形式)
+            display_total_asset = total_asset_jpy * exchange_rate
+            st.markdown(f"""
+            <div style="text-align: center; margin-top: 5px; line-height: 1.4;">
+                <span style="font-size: 1.1rem; font-weight: 500;">{currency_symbol}{display_total_asset:,.2f}</span>
+                <span style="font-size: 1.0rem; color: {jpy_delta_color}; margin-left: 8px;">{delta_display_str}</span>
+            </div>
+            """, unsafe_allow_html=True)
+            # --- 変更箇所 END ---
 
         with c2:
             display_asset_list(portfolio, selected_currency, exchange_rate, name_map)
