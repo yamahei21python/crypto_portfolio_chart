@@ -150,20 +150,16 @@ with tab1:
     delta_display_str = f"{currency_symbol}{display_total_change_24h:,.2f} ({total_change_percentage_24h:+.2f}%)"
 
     # --- BTC建てでの変動額・変動率を計算 ---
-    # ===【BTC変動計算の追加】===
     btc_price_jpy = price_map_jpy.get('bitcoin', 0)
     total_asset_btc = total_asset_value_jpy / btc_price_jpy if btc_price_jpy > 0 else 0
     
-    # 24時間前のBTC価格を計算
     btc_price_change_24h_jpy = price_change_24h_map_jpy.get('bitcoin', 0)
     btc_price_jpy_24h_ago = btc_price_jpy - btc_price_change_24h_jpy
 
-    # 24時間前のポートフォリオのBTC価値を計算
     total_asset_btc_24h_ago = 0
     if btc_price_jpy_24h_ago > 0 and yesterday_asset_value_jpy > 0:
         total_asset_btc_24h_ago = yesterday_asset_value_jpy / btc_price_jpy_24h_ago
     
-    # BTC建ての変動額と変動率を計算
     total_change_24h_btc = total_asset_btc - total_asset_btc_24h_ago
     total_change_percentage_24h_btc = (total_change_24h_btc / total_asset_btc_24h_ago * 100) if total_asset_btc_24h_ago > 0 else 0
     
@@ -179,7 +175,7 @@ with tab1:
     col2.metric(
         label="保有資産合計 (BTC)",
         value=f"{total_asset_btc:.8f} BTC",
-        delta=delta_btc_str # BTCの変動情報をdeltaに設定
+        delta=delta_btc_str
     )
     
     st.markdown("---")
@@ -278,4 +274,43 @@ with tab1:
     st.subheader("⚙️ データベース管理")
     with st.expander("データベースリセット（危険）"):
         st.warning("**警告**: この操作はデータベース上のすべての取引履歴を完全に削除します。この操作は取り消せません。")
-        if st.session_state.get('confirm_delete', False
+        # ===【重要】=== エラー箇所を修正しました ===
+        if st.session_state.get('confirm_delete', False):
+            st.error("本当によろしいですか？最終確認です。")
+            col1, col2 = st.columns(2)
+            if col1.button("はい、すべてのデータを削除します", type="primary"):
+                reset_bigquery_table()
+                st.session_state.confirm_delete = False
+                st.rerun()
+            if col2.button("いいえ、キャンセルします"):
+                st.session_state.confirm_delete = False
+                st.rerun()
+        else:
+            if st.button("すべての取引履歴をリセットする", type="primary"):
+                st.session_state.confirm_delete = True
+                st.rerun()
+
+with tab2:
+    st.header("⭐ ウォッチリスト")
+    st.info("ここに仮想通貨一覧・ランキング機能を実装する予定です。")
+    st.subheader(f"現在の仮想通貨価格 ({selected_currency.upper()})")
+    watchlist_df = crypto_data_jpy.copy()
+    watchlist_df['現在価格'] = watchlist_df['price_jpy'] * exchange_rate
+    
+    watchlist_config = {
+        "symbol": "シンボル",
+        "name": "コイン名",
+        "現在価格": st.column_config.NumberColumn(
+            f"現在価格 ({selected_currency.upper()})",
+            format="%,.2f"
+        ),
+        "price_change_percentage_24h": st.column_config.NumberColumn(
+            "24h変動率 (%)",
+            format="%.2f"
+        )
+    }
+    st.dataframe(
+        watchlist_df.sort_values(by='price_jpy', ascending=False)[['symbol', 'name', '現在価格', 'price_change_percentage_24h']],
+        hide_index=True, use_container_width=True,
+        column_config=watchlist_config
+    )
