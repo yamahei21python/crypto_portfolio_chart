@@ -161,15 +161,21 @@ def calculate_portfolio(transactions_df: pd.DataFrame, price_map: Dict, price_ch
             
     return portfolio, total_asset_jpy, total_change_24h_jpy
 
-# --- UI描画関数 ---
+# ▼▼▼【変更箇所】円グラフの中心に表示するために、BTC建ての総資産を計算する関数を分離 ▼▼▼
+def calculate_btc_value(total_asset_jpy: float, price_map: Dict) -> float:
+    """JPY建て総資産と価格マップからBTC建て総資産を計算する"""
+    btc_price_jpy = price_map.get('bitcoin', 0)
+    if btc_price_jpy > 0:
+        return total_asset_jpy / btc_price_jpy
+    return 0.0
+# ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
-# ▼▼▼【変更箇所】カンマ区切りフォーマット用の関数を定義 ▼▼▼
 def format_jpy(value: float) -> str:
     """数値をカンマ区切りの文字列にフォーマットする（小数点以下0桁）"""
     return f"{value:,.0f}"
-# ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
-def display_summary(total_asset_jpy: float, total_change_24h_jpy: float, currency: str, rate: float, symbol: str, price_map: Dict, price_change_map: Dict):
+# --- UI描画関数 ---
+def display_summary(total_asset_jpy: float, total_change_24h_jpy: float, currency: str, rate: float, symbol: str, price_map: Dict, price_change_map: Dict, total_asset_btc: float):
     """ポートフォリオのサマリーメトリクスを表示する"""
     st.header("📈 ポートフォリオサマリー")
     display_total_asset = total_asset_jpy * rate
@@ -178,10 +184,10 @@ def display_summary(total_asset_jpy: float, total_change_24h_jpy: float, currenc
     change_pct = (total_change_24h_jpy / yesterday_asset_jpy * 100) if yesterday_asset_jpy > 0 else 0
     delta_display_str = f"{symbol}{display_total_change:,.2f} ({change_pct:+.2f}%)"
 
-    total_asset_btc, delta_btc_str = 0, "N/A"
+    # BTC建ての変動額計算
+    delta_btc_str = "N/A"
     btc_price_jpy = price_map.get('bitcoin', 0)
     if btc_price_jpy > 0:
-        total_asset_btc = total_asset_jpy / btc_price_jpy
         btc_change_24h_jpy = price_change_map.get('bitcoin', 0)
         btc_price_24h_ago_jpy = btc_price_jpy - btc_change_24h_jpy
         if btc_price_24h_ago_jpy > 0 and yesterday_asset_jpy > 0:
@@ -197,8 +203,9 @@ def display_summary(total_asset_jpy: float, total_change_24h_jpy: float, currenc
     col1.metric(f"保有資産合計 ({currency.upper()})", f"{symbol}{display_total_asset:,.2f}", delta_display_str)
     col2.metric("保有資産合計 (BTC)", f"{total_asset_btc:.8f} BTC", delta_btc_str)
 
-def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str):
-    """資産割合の円グラフを表示する"""
+# ▼▼▼【変更箇所】円グラフ描画関数を更新 ▼▼▼
+def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_asset_jpy: float, total_asset_btc: float):
+    """資産割合の円グラフを表示し、中央に合計資産を表示する"""
     st.subheader("📊 資産割合 (コイン別)")
     if not portfolio:
         st.info("取引履歴を登録すると、ここにグラフが表示されます。")
@@ -207,13 +214,37 @@ def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str):
     if pie_data.empty or pie_data["評価額(JPY)"].sum() <= 0:
         st.info("保有資産がありません。")
         return
+        
     pie_data['評価額_display'] = pie_data['評価額(JPY)'] * rate
-    fig = px.pie(pie_data, values='評価額_display', names='コイン名', hole=0.3, title="コイン別資産構成")
-    fig.update_traces(textposition='inside', texttemplate=f'%{{label}}<br>%{{percent}}<br>{symbol}%{{value:,.0f}}')
-    fig.update_layout(uniformtext_minsize=12, uniformtext_mode='hide', showlegend=False, margin=dict(t=30, b=0, l=0, r=0))
-    st.plotly_chart(fig, use_container_width=True)
+    fig = px.pie(pie_data, values='評価額_display', names='コイン名', hole=0.4, title="コイン別資産構成")
+    
+    # グラフのスライスのテキストを「コイン名」と「割合」のみにシンプル化
+    fig.update_traces(
+        textposition='outside',
+        texttemplate='%{label}<br>%{percent}'
+    )
+    
+    # 中央に表示するテキストを作成
+    annotation_text = (
+        f"<b>合計資産</b><br>"
+        f"<span style='font-size: 1.2em;'>{symbol}{total_asset_jpy * rate:,.0f}</span><br>"
+        f"<span style='font-size: 0.9em;'>{total_asset_btc:.4f} BTC</span>"
+    )
 
-# ▼▼▼【変更箇所】display_asset_list関数を全面的に更新 ▼▼▼
+    fig.update_layout(
+        uniformtext_minsize=12, 
+        uniformtext_mode='hide',
+        showlegend=False,
+        margin=dict(t=30, b=0, l=0, r=0),
+        # 中央にアノテーション（テキスト）を追加
+        annotations=[dict(
+            text=annotation_text,
+            x=0.5, y=0.5, font_size=16, showarrow=False
+        )]
+    )
+    st.plotly_chart(fig, use_container_width=True)
+# ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
 def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Dict):
     """保有資産一覧をdata_editorで表示し、数量調整機能を提供する"""
     st.subheader("📋 保有資産一覧")
@@ -223,28 +254,43 @@ def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Di
 
     portfolio_df = pd.DataFrame.from_dict(portfolio, orient='index').reset_index(drop=True)
     
-    # 表示用DataFrameを作成（この時点では数値）
     df_display = portfolio_df.copy()
-    df_display['現在価格'] = df_display['現在価格(JPY)'] * rate
-    df_display['評価額'] = df_display['評価額(JPY)'] * rate
-    df_display = df_display.sort_values(by='評価額', ascending=False)
+    df_display['現在価格_num'] = df_display['現在価格(JPY)'] * rate
+    df_display['評価額_num'] = df_display['評価額(JPY)'] * rate
+    df_display = df_display.sort_values(by='評価額_num', ascending=False)
 
-    # 変更前の状態を保存 (数値のままのDataFrameを保存)
     if 'before_edit_df' not in st.session_state:
         st.session_state.before_edit_df = df_display.copy()
 
-    # 表示用にカンマ区切りの文字列にフォーマット
-    df_display['評価額'] = df_display['評価額'].apply(format_jpy)
-    df_display['現在価格'] = df_display['現在価格'].apply(format_jpy)
+    df_display['評価額'] = df_display['評価額_num'].apply(format_jpy)
+    df_display['現在価格'] = df_display['現在価格_num'].apply(format_jpy)
 
-    # TextColumnを使用してカンマ区切り文字列を表示
     column_config = {
         "コイン名": "コイン名", "取引所": "取引所",
         "保有数量": st.column_config.NumberColumn(format="%.8f"),
         "評価額": st.column_config.TextColumn(f"評価額 ({currency.upper()})"),
         "現在価格": st.column_config.TextColumn(f"現在価格 ({currency.upper()})"),
     }
-
+    
+    # ▼▼▼【変更箇所】CSSを適用してテーブル内を右揃えにする ▼▼▼
+    st.markdown("""
+    <style>
+    .right-align-table .stDataFrame [data-testid="stDataFrameData-row"] > div {
+        text-align: right !important;
+        justify-content: flex-end !important;
+    }
+    .right-align-table .stDataFrame [data-testid="stDataFrameData-row"] > div[data-col-id="0"] {
+        text-align: left !important;
+        justify-content: flex-start !important;
+    }
+    .right-align-table .stDataFrame [data-testid="stDataFrameData-row"] > div[data-col-id="1"] {
+        text-align: left !important;
+        justify-content: flex-start !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    st.markdown('<div class="right-align-table">', unsafe_allow_html=True)
     edited_df = st.data_editor(
         df_display[['コイン名', '取引所', '保有数量', '評価額', '現在価格']], 
         disabled=['コイン名', '取引所', '評価額', '現在価格'], 
@@ -253,31 +299,26 @@ def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Di
         key="portfolio_editor",
         hide_index=True
     )
+    st.markdown('</div>', unsafe_allow_html=True)
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
     
-    # 差分を検出して更新処理（比較対象は数値のままのbefore_edit_df）
     if not edited_df['保有数量'].equals(st.session_state.before_edit_df['保有数量']):
         merged_df = pd.merge(st.session_state.before_edit_df, edited_df, on=['コイン名', '取引所'], suffixes=('_before', '_after'))
-        
         for _, row in merged_df.iterrows():
             if not np.isclose(row['保有数量_before'], row['保有数量_after']):
                 quantity_diff = row['保有数量_after'] - row['保有数量_before']
                 coin_name, exchange = row['コイン名'], row['取引所']
                 coin_id = next((cid for cid, name in name_map.items() if name == coin_name), None)
-
                 if coin_id:
                     transaction_type = "調整（増）" if quantity_diff > 0 else "調整（減）"
                     transaction = {
-                        "transaction_date": datetime.now(timezone.utc),
-                        "coin_id": coin_id, "coin_name": coin_name, "exchange": exchange,
-                        "transaction_type": transaction_type, "quantity": abs(quantity_diff),
-                        "price_jpy": 0, "fee_jpy": 0, "total_jpy": 0,
+                        "transaction_date": datetime.now(timezone.utc), "coin_id": coin_id, "coin_name": coin_name, "exchange": exchange,
+                        "transaction_type": transaction_type, "quantity": abs(quantity_diff), "price_jpy": 0, "fee_jpy": 0, "total_jpy": 0,
                     }
                     if add_transaction_to_bq(transaction):
                         st.toast(f"{coin_name} ({exchange}) の数量を調整: {quantity_diff:+.8f}", icon="✍️")
-        
         del st.session_state.before_edit_df
         st.rerun()
-# ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
 def display_transaction_form(coin_options: Dict, name_map: Dict):
     """取引履歴の登録フォームを表示する"""
@@ -391,11 +432,17 @@ def main():
 
     with tab1:
         portfolio, total_asset_jpy, total_change_24h_jpy = calculate_portfolio(transactions_df, price_map, price_change_map, name_map)
-        display_summary(total_asset_jpy, total_change_24h_jpy, selected_currency, exchange_rate, currency_symbol, price_map, price_change_map)
+        
+        # ▼▼▼【変更箇所】BTC建て総資産を計算し、サマリーと円グラフに渡す ▼▼▼
+        total_asset_btc = calculate_btc_value(total_asset_jpy, price_map)
+        
+        display_summary(total_asset_jpy, total_change_24h_jpy, selected_currency, exchange_rate, currency_symbol, price_map, price_change_map, total_asset_btc)
         st.markdown("---")
+        
         c1, c2 = st.columns([1, 1.2])
         with c1:
-            display_asset_pie_chart(portfolio, exchange_rate, currency_symbol)
+            display_asset_pie_chart(portfolio, exchange_rate, currency_symbol, total_asset_jpy, total_asset_btc)
+        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
         with c2:
             display_asset_list(portfolio, selected_currency, exchange_rate, name_map)
         st.markdown("---")
