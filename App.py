@@ -416,11 +416,9 @@ def display_asset_pie_chart(
         texttemplate=f"%{{label}} (%{{percent}})<br>{symbol}%{{value:,.0f}}",
         textfont_size=12, 
         marker=dict(line=dict(color='#FFFFFF', width=2)),
-        # === ▼▼▼ 変更箇所 ▼▼▼ ===
         sort=False,           # DataFrameのソート順を維持するために、Plotlyによる自動ソートを無効化
         direction='clockwise',# セグメントを時計回りに配置
-        rotation=90           # グラフ全体を90度回転させ、最初のセグメントが12時の位置から始まるように設定
-        # === ▲▲▲ 変更箇所 ▲▲▲ ===
+        rotation=0           # グラフ全体を90度回転させ、最初のセグメントが12時の位置から始まるように設定
     )
     annotation_text = (
         f"<span style='font-size: clamp(1.6rem, 4.5vw, 2.3rem); color: {deltas['jpy_delta_color']}; font-weight: bold;'>{symbol}{total_asset_jpy * rate:,.0f}</span><br><br>"
