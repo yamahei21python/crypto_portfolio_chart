@@ -161,14 +161,12 @@ def calculate_portfolio(transactions_df: pd.DataFrame, price_map: Dict, price_ch
             
     return portfolio, total_asset_jpy, total_change_24h_jpy
 
-# ▼▼▼【変更箇所】円グラフの中心に表示するために、BTC建ての総資産を計算する関数を分離 ▼▼▼
 def calculate_btc_value(total_asset_jpy: float, price_map: Dict) -> float:
     """JPY建て総資産と価格マップからBTC建て総資産を計算する"""
     btc_price_jpy = price_map.get('bitcoin', 0)
     if btc_price_jpy > 0:
         return total_asset_jpy / btc_price_jpy
     return 0.0
-# ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
 def format_jpy(value: float) -> str:
     """数値をカンマ区切りの文字列にフォーマットする（小数点以下0桁）"""
@@ -184,7 +182,6 @@ def display_summary(total_asset_jpy: float, total_change_24h_jpy: float, currenc
     change_pct = (total_change_24h_jpy / yesterday_asset_jpy * 100) if yesterday_asset_jpy > 0 else 0
     delta_display_str = f"{symbol}{display_total_change:,.2f} ({change_pct:+.2f}%)"
 
-    # BTC建ての変動額計算
     delta_btc_str = "N/A"
     btc_price_jpy = price_map.get('bitcoin', 0)
     if btc_price_jpy > 0:
@@ -203,9 +200,9 @@ def display_summary(total_asset_jpy: float, total_change_24h_jpy: float, currenc
     col1.metric(f"保有資産合計 ({currency.upper()})", f"{symbol}{display_total_asset:,.2f}", delta_display_str)
     col2.metric("保有資産合計 (BTC)", f"{total_asset_btc:.8f} BTC", delta_btc_str)
 
-# ▼▼▼【変更箇所】円グラフ描画関数を更新 ▼▼▼
+# ▼▼▼【変更箇所】この関数を丸ごと差し替えてください ▼▼▼
 def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_asset_jpy: float, total_asset_btc: float):
-    """資産割合の円グラフを表示し、中央に合計資産を表示する"""
+    """資産割合の円グラフを表示し、中央に合計資産、各スライスに詳細情報を表示する"""
     st.subheader("📊 資産割合 (コイン別)")
     if not portfolio:
         st.info("取引履歴を登録すると、ここにグラフが表示されます。")
@@ -216,12 +213,17 @@ def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_ass
         return
         
     pie_data['評価額_display'] = pie_data['評価額(JPY)'] * rate
-    fig = px.pie(pie_data, values='評価額_display', names='コイン名', hole=0.4, title="コイン別資産構成")
+    fig = px.pie(pie_data, values='評価額_display', names='コイン名', hole=0.5, title="コイン別資産構成")
     
-    # グラフのスライスのテキストを「コイン名」と「割合」のみにシンプル化
+    # グラフのスライスのテキストフォーマットを指定
+    # 1行目: 通貨名 (保有率)
+    # 2行目: 評価額
     fig.update_traces(
-        textposition='outside',
-        texttemplate='%{label}<br>%{percent}'
+        textposition='inside',
+        textinfo='text',
+        texttemplate=f"%{{label}} (%{{percent}})<br>{symbol}%{{value:,.0f}}",
+        textfont_size=12,
+        marker=dict(line=dict(color='#FFFFFF', width=2)) # スライス間に白い線を追加して見やすくする
     )
     
     # 中央に表示するテキストを作成
@@ -232,11 +234,10 @@ def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_ass
     )
 
     fig.update_layout(
-        uniformtext_minsize=12, 
-        uniformtext_mode='hide',
+        uniformtext_minsize=10, 
+        uniformtext_mode='hide', # テキストが重なったら非表示にする
         showlegend=False,
         margin=dict(t=30, b=0, l=0, r=0),
-        # 中央にアノテーション（テキスト）を追加
         annotations=[dict(
             text=annotation_text,
             x=0.5, y=0.5, font_size=16, showarrow=False
@@ -272,7 +273,6 @@ def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Di
         "現在価格": st.column_config.TextColumn(f"現在価格 ({currency.upper()})"),
     }
     
-    # ▼▼▼【変更箇所】CSSを適用してテーブル内を右揃えにする ▼▼▼
     st.markdown("""
     <style>
     .right-align-table .stDataFrame [data-testid="stDataFrameData-row"] > div {
@@ -300,7 +300,6 @@ def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Di
         hide_index=True
     )
     st.markdown('</div>', unsafe_allow_html=True)
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
     
     if not edited_df['保有数量'].equals(st.session_state.before_edit_df['保有数量']):
         merged_df = pd.merge(st.session_state.before_edit_df, edited_df, on=['コイン名', '取引所'], suffixes=('_before', '_after'))
@@ -433,7 +432,6 @@ def main():
     with tab1:
         portfolio, total_asset_jpy, total_change_24h_jpy = calculate_portfolio(transactions_df, price_map, price_change_map, name_map)
         
-        # ▼▼▼【変更箇所】BTC建て総資産を計算し、サマリーと円グラフに渡す ▼▼▼
         total_asset_btc = calculate_btc_value(total_asset_jpy, price_map)
         
         display_summary(total_asset_jpy, total_change_24h_jpy, selected_currency, exchange_rate, currency_symbol, price_map, price_change_map, total_asset_btc)
@@ -442,7 +440,6 @@ def main():
         c1, c2 = st.columns([1, 1.2])
         with c1:
             display_asset_pie_chart(portfolio, exchange_rate, currency_symbol, total_asset_jpy, total_asset_btc)
-        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
         with c2:
             display_asset_list(portfolio, selected_currency, exchange_rate, name_map)
         st.markdown("---")
