@@ -209,7 +209,7 @@ def calculate_deltas(total_asset_jpy: float, total_change_24h_jpy: float, rate: 
 
 def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_asset_jpy: float, total_asset_btc: float):
     """資産割合の円グラフを表示し、中央に合計資産、各スライスに詳細情報を表示する"""
-    st.subheader("📊 資産割合 (コイン別)")
+    st.subheader("📊 資産割合")
     if not portfolio:
         st.info("取引履歴を登録すると、ここにグラフが表示されます。")
         return
@@ -222,7 +222,7 @@ def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_ass
     pie_data = pie_data.sort_values(by="評価額(JPY)", ascending=False)
         
     pie_data['評価額_display'] = pie_data['評価額(JPY)'] * rate
-    fig = px.pie(pie_data, values='評価額_display', names='コイン名', hole=0.5, title="コイン別資産構成")
+    fig = px.pie(pie_data, values='評価額_display', names='コイン名', hole=0.5, title="資産構成")
     
     fig.update_traces(
         textposition='inside',
@@ -254,8 +254,8 @@ def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_ass
     st.plotly_chart(fig, use_container_width=True)
 
 def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Dict):
-    """保有資産一覧をdata_editorで表示し、数量調整機能を提供する"""
-    st.subheader("📋 保有資産一覧")
+    """資産一覧をdata_editorで表示し、数量調整機能を提供する"""
+    st.subheader("📋 資産一覧")
     if not portfolio:
         st.info("保有資産はありません。")
         return
