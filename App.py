@@ -302,16 +302,6 @@ RIGHT_ALIGN_STYLE = """
         text-align: right !important;
         justify-content: flex-end !important;
     }
-    /* 最初の列（銘柄名など）だけ左寄せに戻す */
-    .right-align-table .stDataFrame [data-testid="stDataFrameData-row"] > div:first-child {
-        text-align: left !important;
-        justify-content: flex-start !important;
-    }
-    /* 資産一覧（詳細）の2列目（取引所）も左寄せに戻す */
-    .right-align-table .stDataFrame [data-testid="stDataFrameData-row"] > div[data-col-id="1"]:not(:first-child) {
-        text-align: left !important;
-        justify-content: flex-start !important;
-    }
 </style>
 """
 
