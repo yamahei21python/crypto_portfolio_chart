@@ -392,8 +392,7 @@ def display_database_management(currency: str):
                 st.rerun()
 
 def render_watchlist_tab(market_data: pd.DataFrame, currency: str, rate: float):
-    st.header("⭐ ウォッチリスト")
-    st.subheader(f"時価総額トップ20 ({currency.upper()})")
+    st.header(f"時価総額トップ20 ({currency.upper()})")
     
     if 'market_cap' not in market_data.columns:
         st.warning("時価総額データが取得できませんでした。")
