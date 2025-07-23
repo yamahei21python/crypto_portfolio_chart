@@ -7,7 +7,7 @@ import numpy as np
 from google.cloud import bigquery
 from google.oauth2 import service_account
 import google.api_core.exceptions
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 
 # --- 定数定義 ---
 # BigQuery関連
@@ -172,17 +172,21 @@ def format_jpy(value: float) -> str:
     """数値をカンマ区切りの文字列にフォーマットする（小数点以下0桁）"""
     return f"{value:,.0f}"
 
-# --- UI描画関数 ---
-def display_summary(total_asset_jpy: float, total_change_24h_jpy: float, currency: str, rate: float, symbol: str, price_map: Dict, price_change_map: Dict, total_asset_btc: float):
-    """ポートフォリオのサマリーメトリクスを表示する"""
-    st.header("📈 ポートフォリオサマリー")
-    display_total_asset = total_asset_jpy * rate
+# ▼▼▼【変更箇所】変動情報（文字列と色）を計算する関数を新設 ▼▼▼
+def calculate_deltas(total_asset_jpy: float, total_change_24h_jpy: float, rate: float, symbol: str, price_map: Dict, price_change_map: Dict) -> Tuple[str, str, str, str]:
+    """24時間変動に関する表示用文字列と色を計算して返す"""
+    # JPY建ての計算
     display_total_change = total_change_24h_jpy * rate
     yesterday_asset_jpy = total_asset_jpy - total_change_24h_jpy
     change_pct = (total_change_24h_jpy / yesterday_asset_jpy * 100) if yesterday_asset_jpy > 0 else 0
     delta_display_str = f"{symbol}{display_total_change:,.2f} ({change_pct:+.2f}%)"
+    jpy_delta_color = "green" if total_change_24h_jpy >= 0 else "red"
 
+    # BTC建ての計算
     delta_btc_str = "N/A"
+    btc_delta_color = "grey"
+    total_asset_btc = calculate_btc_value(total_asset_jpy, price_map)
+    
     btc_price_jpy = price_map.get('bitcoin', 0)
     if btc_price_jpy > 0:
         btc_change_24h_jpy = price_change_map.get('bitcoin', 0)
@@ -195,12 +199,23 @@ def display_summary(total_asset_jpy: float, total_change_24h_jpy: float, currenc
                 delta_btc_str = f"{change_btc:+.8f} BTC ({change_btc_pct:+.2f}%)"
             else:
                 delta_btc_str = f"{change_btc:+.8f} BTC"
+            btc_delta_color = "green" if change_btc >= 0 else "red"
+            
+    return delta_display_str, jpy_delta_color, delta_btc_str, btc_delta_color
+# ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
+# --- UI描画関数 ---
+# ▼▼▼【変更箇所】display_summary関数を簡素化 ▼▼▼
+def display_summary(total_asset_jpy: float, currency: str, rate: float, symbol: str, total_asset_btc: float, delta_display_str: str, delta_btc_str: str):
+    """ポートフォリオのサマリーメトリクスを表示する"""
+    st.header("📈 ポートフォリオサマリー")
+    display_total_asset = total_asset_jpy * rate
     
     col1, col2 = st.columns(2)
     col1.metric(f"保有資産合計 ({currency.upper()})", f"{symbol}{display_total_asset:,.2f}", delta_display_str)
     col2.metric("保有資産合計 (BTC)", f"{total_asset_btc:.8f} BTC", delta_btc_str)
+# ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
-# ▼▼▼【変更箇所】この関数を丸ごと差し替えてください ▼▼▼
 def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_asset_jpy: float, total_asset_btc: float):
     """資産割合の円グラフを表示し、中央に合計資産、各スライスに詳細情報を表示する"""
     st.subheader("📊 資産割合 (コイン別)")
@@ -215,18 +230,14 @@ def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_ass
     pie_data['評価額_display'] = pie_data['評価額(JPY)'] * rate
     fig = px.pie(pie_data, values='評価額_display', names='コイン名', hole=0.5, title="コイン別資産構成")
     
-    # グラフのスライスのテキストフォーマットを指定
-    # 1行目: 通貨名 (保有率)
-    # 2行目: 評価額
     fig.update_traces(
         textposition='inside',
         textinfo='text',
         texttemplate=f"%{{label}} (%{{percent}})<br>{symbol}%{{value:,.0f}}",
         textfont_size=12,
-        marker=dict(line=dict(color='#FFFFFF', width=2)) # スライス間に白い線を追加して見やすくする
+        marker=dict(line=dict(color='#FFFFFF', width=2))
     )
     
-    # 中央に表示するテキストを作成
     annotation_text = (
         f"<b>合計資産</b><br>"
         f"<span style='font-size: 1.2em;'>{symbol}{total_asset_jpy * rate:,.0f}</span><br>"
@@ -235,7 +246,7 @@ def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_ass
 
     fig.update_layout(
         uniformtext_minsize=10, 
-        uniformtext_mode='hide', # テキストが重なったら非表示にする
+        uniformtext_mode='hide',
         showlegend=False,
         margin=dict(t=30, b=0, l=0, r=0),
         annotations=[dict(
@@ -244,7 +255,6 @@ def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_ass
         )]
     )
     st.plotly_chart(fig, use_container_width=True)
-# ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
 def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Dict):
     """保有資産一覧をdata_editorで表示し、数量調整機能を提供する"""
@@ -431,17 +441,35 @@ def main():
 
     with tab1:
         portfolio, total_asset_jpy, total_change_24h_jpy = calculate_portfolio(transactions_df, price_map, price_change_map, name_map)
-        
         total_asset_btc = calculate_btc_value(total_asset_jpy, price_map)
         
-        display_summary(total_asset_jpy, total_change_24h_jpy, selected_currency, exchange_rate, currency_symbol, price_map, price_change_map, total_asset_btc)
+        # ▼▼▼【変更箇所】新設した関数で変動情報を計算 ▼▼▼
+        delta_display_str, jpy_delta_color, delta_btc_str, btc_delta_color = calculate_deltas(
+            total_asset_jpy, total_change_24h_jpy, exchange_rate, currency_symbol, price_map, price_change_map
+        )
+        
+        # サマリー表示
+        display_summary(total_asset_jpy, selected_currency, exchange_rate, currency_symbol, total_asset_btc, delta_display_str, delta_btc_str)
         st.markdown("---")
         
         c1, c2 = st.columns([1, 1.2])
         with c1:
             display_asset_pie_chart(portfolio, exchange_rate, currency_symbol, total_asset_jpy, total_asset_btc)
+            
+            # ▼▼▼【変更箇所】円グラフの下に変動情報を表示 ▼▼▼
+            st.divider()
+            d1, d2 = st.columns(2)
+            with d1:
+                st.markdown(f"**24H変動 ({selected_currency.upper()})**")
+                st.markdown(f"<p style='color:{jpy_delta_color}; font-size:1.1em; font-weight:bold;'>{delta_display_str}</p>", unsafe_allow_html=True)
+            with d2:
+                st.markdown(f"**24H変動 (BTC)**")
+                st.markdown(f"<p style='color:{btc_delta_color}; font-size:1.1em; font-weight:bold;'>{delta_btc_str}</p>", unsafe_allow_html=True)
+            # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+            
         with c2:
             display_asset_list(portfolio, selected_currency, exchange_rate, name_map)
+            
         st.markdown("---")
         display_transaction_form(coin_options, name_map)
         display_transaction_history(transactions_df)
