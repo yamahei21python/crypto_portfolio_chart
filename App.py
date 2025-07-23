@@ -271,7 +271,6 @@ def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_ass
                       annotations=[dict(text=annotation_text, x=0.5, y=0.5, font_size=16, showarrow=False)])
     st.plotly_chart(fig, use_container_width=True)
 
-# ★★★ 変更点 ★★★
 def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Dict):
     """保有資産一覧をタブ形式で表示する（コイン別、取引所別、詳細）"""
     st.subheader("📋 保有資産一覧")
@@ -287,23 +286,36 @@ def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Di
     tab_coin, tab_exchange, tab_detail = st.tabs(["コイン別", "取引所別", "詳細"])
     symbol = CURRENCY_SYMBOLS[currency]
 
+    # ★★★ 変更点 ★★★
+    # スタイル定義をタブの外に移動し、セレクタを具体的にすることでdivラッパーを不要にする
+    st.markdown("""<style>
+    /* 詳細タブ（3番目）のデータエディタ内のテーブル行にスタイルを適用 */
+    [data-testid="stTabs"] [data-baseweb="tab-panel"]:nth-of-type(3) .stDataFrame [data-testid="stDataFrameData-row"] > div {
+        text-align: right !important;
+        justify-content: flex-end !important;
+    }
+    /* 詳細タブのテーブルの1列目と2列目だけ左寄せに戻す */
+    [data-testid="stTabs"] [data-baseweb="tab-panel"]:nth-of-type(3) .stDataFrame [data-testid="stDataFrameData-row"] > div[data-col-id="0"],
+    [data-testid="stTabs"] [data-baseweb="tab-panel"]:nth-of-type(3) .stDataFrame [data-testid="stDataFrameData-row"] > div[data-col-id="1"] {
+        text-align: left !important;
+        justify-content: flex-start !important;
+    }
+    </style>""", unsafe_allow_html=True)
+
     with tab_coin:
-        # コイン名でグループ化し、数量と評価額は合計、現在価格は最初の値を取得
         coin_summary = portfolio_df.groupby("コイン名").agg(
             保有数量=('保有数量', 'sum'),
             評価額_display=('評価額_display', 'sum'),
-            現在価格_jpy=('現在価格(JPY)', 'first') # 元のJPY価格を取得
+            現在価格_jpy=('現在価格(JPY)', 'first')
         ).sort_values(by='評価額_display', ascending=False).reset_index()
 
-        # 表示用のフォーマット済み列を作成
         coin_summary['評価額'] = coin_summary['評価額_display'].apply(lambda x: format_jpy(x, symbol))
         coin_summary['現在価格'] = (coin_summary['現在価格_jpy'] * rate).apply(lambda x: format_jpy(x, symbol))
         
         st.dataframe(
             coin_summary[['コイン名', '保有数量', '評価額', '現在価格']],
             column_config={
-                "コイン名": "コイン名",
-                "保有数量": st.column_config.NumberColumn("保有数量", format="%.8f"),
+                "保有数量": st.column_config.NumberColumn(format="%.8f"),
                 "評価額": st.column_config.TextColumn(f"評価額 ({currency.upper()})"),
                 "現在価格": st.column_config.TextColumn(f"現在価格 ({currency.upper()})")
             },
@@ -311,7 +323,6 @@ def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Di
         )
 
     with tab_exchange:
-        # 取引所別は評価額の合計のみ表示（異なるコインの数量や価格の合計は無意味なため）
         exchange_summary = portfolio_df.groupby("取引所")['評価額_display'].sum().sort_values(ascending=False).reset_index()
         exchange_summary['評価額'] = exchange_summary['評価額_display'].apply(lambda x: format_jpy(x, symbol))
         st.dataframe(
@@ -321,7 +332,6 @@ def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Di
         )
 
     with tab_detail:
-        # 詳細タブは変更なし
         df_display = portfolio_df.copy().sort_values(by='評価額_display', ascending=False)
         df_display['現在価格_display'] = df_display['現在価格(JPY)'] * rate
         
@@ -338,20 +348,14 @@ def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Di
             "現在価格": st.column_config.TextColumn(f"現在価格 ({currency.upper()})"),
         }
         
-        st.markdown("""<style>
-        .right-align-table .stDataFrame [data-testid="stDataFrameData-row"] > div { text-align: right !important; justify-content: flex-end !important; }
-        .right-align-table .stDataFrame [data-testid="stDataFrameData-row"] > div[data-col-id="0"],
-        .right-align-table .stDataFrame [data-testid="stDataFrameData-row"] > div[data-col-id="1"] { text-align: left !important; justify-content: flex-start !important; }
-        </style>""", unsafe_allow_html=True)
-        
-        st.markdown('<div class="right-align-table">', unsafe_allow_html=True)
+        # ★★★ 変更点 ★★★
+        # st.markdownのラッパーを削除し、data_editorを直接配置する
         edited_df = st.data_editor(
             df_display[['コイン名', '取引所', '保有数量', '評価額', '現在価格']],
             disabled=['コイン名', '取引所', '評価額', '現在価格'], column_config=column_config,
             use_container_width=True, key="portfolio_editor", hide_index=True
         )
-        st.markdown('</div>', unsafe_allow_html=True)
-
+        
         if not edited_df['保有数量'].equals(st.session_state.before_edit_df['保有数量']):
             merged_df = pd.merge(st.session_state.before_edit_df, edited_df, on=['コイン名', '取引所'], suffixes=('_before', '_after'))
             for _, row in merged_df.iterrows():
