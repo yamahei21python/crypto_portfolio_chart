@@ -6,3 +6,4 @@ numpy
 google-cloud-bigquery
 db-dtypes
 google-auth
+kaleido
