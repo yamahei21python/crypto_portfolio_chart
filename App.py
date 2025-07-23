@@ -35,15 +35,13 @@ def init_bigquery_table():
         bigquery.SchemaField("total_jpy", "FLOAT64", mode="REQUIRED"),
     ]
     table = bigquery.Table(TABLE_FULL_ID, schema=schema)
-    try:
-        client.get_table(TABLE_FULL_ID)
+    try: client.get_table(TABLE_FULL_ID)
     except google.api_core.exceptions.NotFound:
         client.create_table(table)
         st.toast(f"BigQueryテーブル '{TABLE_ID}' を作成しました。")
 
 def add_transaction_to_bq(date, coin_id, coin_name, exchange, type, qty, price, fee, total):
-    if isinstance(date, datetime) and date.tzinfo is None:
-        date = date.replace(tzinfo=timezone.utc)
+    if isinstance(date, datetime) and date.tzinfo is None: date = date.replace(tzinfo=timezone.utc)
     rows_to_insert = [{"transaction_date": date.isoformat(), "coin_id": coin_id, "coin_name": coin_name, "exchange": exchange, "transaction_type": type, "quantity": qty, "price_jpy": price, "fee_jpy": fee, "total_jpy": total}]
     errors = client.insert_rows_json(TABLE_FULL_ID, rows_to_insert)
     if errors: st.error(f"データの追加に失敗しました: {errors}")
@@ -53,7 +51,6 @@ def get_transactions_from_bq():
     try:
         df = client.query(query).to_dataframe(create_bqstorage_client=False)
     except google.api_core.exceptions.NotFound:
-        st.warning("取引履歴テーブルが見つかりません。最初の取引を登録してください。")
         init_bigquery_table()
         return pd.DataFrame()
     if not df.empty:
@@ -61,18 +58,29 @@ def get_transactions_from_bq():
         df['取引日'] = df['取引日'].dt.tz_convert('Asia/Tokyo')
     return df
 
+# ### 変更点: DBリセット用の関数を追加 ###
+def reset_bigquery_table():
+    """BigQueryのtransactionsテーブルを空にする"""
+    query = f"TRUNCATE TABLE `{TABLE_FULL_ID}`"
+    try:
+        client.query(query).result()
+        st.success("すべての取引履歴がリセットされました。")
+    except Exception as e:
+        st.error(f"データベースのリセット中にエラーが発生しました: {e}")
+
+# --- 初期設定 ---
 st.set_page_config(page_title="仮想通貨ポートフォリ管理", page_icon="🪙", layout="wide")
 cg = CoinGeckoAPI()
 CURRENCY_SYMBOLS = {'jpy': '¥', 'usd': '$'}
-if 'currency' not in st.session_state:
-    st.session_state.currency = 'jpy'
+if 'currency' not in st.session_state: st.session_state.currency = 'jpy'
+if 'confirm_delete' not in st.session_state: st.session_state.confirm_delete = False
 
+# --- 関数定義 (API関連) ---
 @st.cache_data(ttl=600)
 def get_crypto_data():
     try:
         data = cg.get_coins_markets(vs_currency='jpy', order='market_cap_desc', per_page=20, page=1)
-        df = pd.DataFrame(data, columns=['id', 'symbol', 'name', 'current_price'])
-        return df.rename(columns={'current_price': 'price_jpy'})
+        return pd.DataFrame(data, columns=['id', 'symbol', 'name', 'current_price']).rename(columns={'current_price': 'price_jpy'})
     except Exception as e:
         st.error(f"価格データの取得に失敗しました: {e}")
         return pd.DataFrame()
@@ -88,6 +96,7 @@ def get_exchange_rate(target_currency='usd'):
         st.warning(f"為替レートの取得に失敗しました: {e}")
         return 1.0
 
+# --- アプリ本体 ---
 crypto_data_jpy = get_crypto_data()
 if crypto_data_jpy.empty: st.stop()
 coin_options = {f"{row['name']} ({row['symbol'].upper()})": row['id'] for _, row in crypto_data_jpy.iterrows()}
@@ -146,38 +155,12 @@ with tab1:
             portfolio_df_display = portfolio_df.copy()
             portfolio_df_display['現在価格'] = portfolio_df_display['現在価格(JPY)'] * exchange_rate
             portfolio_df_display['評価額'] = portfolio_df_display['評価額(JPY)'] * exchange_rate
-
-            # ### 変更点 1: 評価額でソート ###
             portfolio_df_display = portfolio_df_display.sort_values(by='評価額', ascending=False)
-
-            asset_list_config = {
-                "コイン名": "コイン名", "取引所": "取引所",
-                "保有数量": st.column_config.NumberColumn(format="%.8f"),
-                "現在価格": st.column_config.NumberColumn(f"現在価格 ({selected_currency.upper()})", format=f"{currency_symbol}%,.2f"),
-                "評価額": st.column_config.NumberColumn(f"評価額 ({selected_currency.upper()})", format=f"{currency_symbol}%,.0f"),
-            }
-
-            edited_df = st.data_editor(
-                portfolio_df_display[['コイン名', '取引所', '保有数量', '現在価格', '評価額']],
-                disabled=['コイン名', '取引所', '現在価格', '評価額'],
-                column_config=asset_list_config, 
-                use_container_width=True, 
-                key="portfolio_editor",
-                hide_index=True  # ### 変更点 2: インデックスを非表示 ###
-            )
-
+            asset_list_config = {"コイン名": "コイン名", "取引所": "取引所", "保有数量": st.column_config.NumberColumn(format="%.8f"), "現在価格": st.column_config.NumberColumn(f"現在価格 ({selected_currency.upper()})", format=f"{currency_symbol}%,.2f"), "評価額": st.column_config.NumberColumn(f"評価額 ({selected_currency.upper()})", format=f"{currency_symbol}%,.0f"),}
+            edited_df = st.data_editor(portfolio_df_display[['コイン名', '取引所', '保有数量', '現在価格', '評価額']], disabled=['コイン名', '取引所', '現在価格', '評価額'], column_config=asset_list_config, use_container_width=True, key="portfolio_editor", hide_index=True)
             update_triggered = False
-            # 編集後のデータはソートされているため、元のデータと比較するために工夫が必要
             if not edited_df.equals(portfolio_df_display):
-                # 編集前と編集後のDataFrameをマージして差分を特定
-                # Coin, Exchangeをキーとしてマージ
-                merged_df = pd.merge(
-                    portfolio_df_before_edit,
-                    edited_df,
-                    on=['コイン名', '取引所'],
-                    suffixes=('_before', '_after')
-                )
-
+                merged_df = pd.merge(portfolio_df_before_edit, edited_df, on=['コイン名', '取引所'], suffixes=('_before', '_after'))
                 for _, row in merged_df.iterrows():
                     if not np.isclose(row['保有数量_before'], row['保有数量_after']):
                         quantity_diff = row['保有数量_after'] - row['保有数量_before']
@@ -188,7 +171,6 @@ with tab1:
                             add_transaction_to_bq(datetime.now(timezone.utc), coin_id, coin_name, exchange, transaction_type, abs(quantity_diff), 0, 0, 0)
                             st.toast(f"{coin_name} ({exchange}) の数量を調整: {quantity_diff:+.8f}", icon="✍️")
                             update_triggered = True
-            
             if update_triggered: st.rerun()
         else: st.info("保有資産はありません。")
 
@@ -211,16 +193,36 @@ with tab1:
 
     st.subheader("🗒️ 取引履歴")
     if not transactions_df.empty:
-        history_config = {
-            "取引日": st.column_config.DatetimeColumn(format="YYYY/MM/DD HH:mm"), 
-            "数量": st.column_config.NumberColumn(format="%.6f"), 
-            "価格(JPY)": st.column_config.NumberColumn(format="¥%,.2f")
-        }
+        # ### 変更点: 価格(JPY)列を非表示 ###
+        history_config = {"取引日": st.column_config.DatetimeColumn(format="YYYY/MM/DD HH:mm"), "数量": st.column_config.NumberColumn(format="%.6f")}
         st.dataframe(
-            transactions_df[['取引日', 'コイン名', '取引所', '売買種別', '数量', '価格(JPY)']],
+            transactions_df[['取引日', 'コイン名', '取引所', '売買種別', '数量']],
             hide_index=True, use_container_width=True,
             column_config=history_config)
     else: st.info("まだ取引履歴がありません。")
+
+    # ### 変更点: DBリセットボタンを追加 ###
+    st.markdown("---")
+    st.subheader("⚙️ データベース管理")
+    with st.expander("データベースリセット（危険）"):
+        st.warning("**警告**: この操作はデータベース上のすべての取引履歴を完全に削除します。この操作は取り消せません。")
+        
+        if st.session_state.confirm_delete:
+            st.error("本当によろしいですか？最終確認です。")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("はい、すべてのデータを削除します", type="primary"):
+                    reset_bigquery_table()
+                    st.session_state.confirm_delete = False
+                    st.rerun()
+            with col2:
+                if st.button("いいえ、キャンセルします"):
+                    st.session_state.confirm_delete = False
+                    st.rerun()
+        else:
+            if st.button("すべての取引履歴をリセットする", type="primary"):
+                st.session_state.confirm_delete = True
+                st.rerun()
 
 with tab2:
     st.header("⭐ ウォッチリスト")
@@ -228,12 +230,7 @@ with tab2:
     st.subheader(f"現在の仮想通貨価格 ({selected_currency.upper()})")
     watchlist_df = crypto_data_jpy.copy()
     watchlist_df['現在価格'] = watchlist_df['price_jpy'] * exchange_rate
-    
-    watchlist_config = {
-        "symbol": "シンボル", "name": "コイン名",
-        "現在価格": st.column_config.NumberColumn(f"現在価格 ({selected_currency.upper()})", format=f"{currency_symbol}%,.2f")
-    }
-
+    watchlist_config = {"symbol": "シンボル", "name": "コイン名", "現在価格": st.column_config.NumberColumn(f"現在価格 ({selected_currency.upper()})", format=f"{currency_symbol}%,.2f")}
     st.dataframe(
         watchlist_df.sort_values(by='現在価格', ascending=False)[['symbol', 'name', '現在価格']], hide_index=True, use_container_width=True,
         column_config=watchlist_config)
