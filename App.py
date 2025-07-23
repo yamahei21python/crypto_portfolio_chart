@@ -406,7 +406,7 @@ def display_asset_pie_chart(
     fig.update_traces(
         textposition='inside',
         textinfo='text',
-        texttemplate=f"%{{label}} (%{{percent}})<br>{symbol}%{{value:,.0f}}",
+        texttemplate=f"%{{label}} (%{{percent}})<br><br>{symbol}%{{value:,.0f}}",
         textfont_size=12,
         marker=dict(line=dict(color='#FFFFFF', width=2)),
         direction='clockwise',
