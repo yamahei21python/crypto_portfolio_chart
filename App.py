@@ -227,7 +227,7 @@ RIGHT_ALIGN_STYLE = """
 
 # ★★★ 変更点: 引数に jpy_delta_color と btc_delta_color を追加 ★★★
 def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_asset_jpy: float, total_asset_btc: float, jpy_delta_color: str, btc_delta_color: str):
-    st.subheader("📊 資産割合 (コイン別)")
+    st.subheader("📊 資産構成")
     if not portfolio:
         st.info("取引履歴を登録すると、ここにグラフが表示されます。")
         return
@@ -237,16 +237,14 @@ def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_ass
         return
     pie_data = pie_data.sort_values(by="評価額(JPY)", ascending=False)
     pie_data['評価額_display'] = pie_data['評価額(JPY)'] * rate
-    fig = px.pie(pie_data, values='評価額_display', names='コイン名', color='コイン名', hole=0.5, 
-                 title="コイン別資産構成", color_discrete_map=COIN_COLORS)
+    fig = px.pie(pie_data, values='評価額_display', names='コイン名', color='コイン名', hole=0.5, color_discrete_map=COIN_COLORS)
     fig.update_traces(textposition='inside', textinfo='text', texttemplate=f"%{{label}} (%{{percent}})<br>{symbol}%{{value:,.0f}}",
                       textfont_size=12, marker=dict(line=dict(color='#FFFFFF', width=2)), direction='clockwise', rotation=0)
     
     # ★★★ 変更点: アノテーションテキストに色情報を追加 ★★★
     annotation_text = (
-        f"<b>合計資産</b><br>"
-        f"<span style='font-size: 1.2em; color: {jpy_delta_color};'>{symbol}{total_asset_jpy * rate:,.0f}</span><br>"
-        f"<span style='font-size: 0.9em; color: {btc_delta_color};'>{total_asset_btc:.4f} BTC</span>"
+        f"<span style='font-size: 2.0em; color: {jpy_delta_color};'>{symbol}{total_asset_jpy * rate:,.0f}</span><br>"
+        f"<span style='font-size: 1.5em; color: {btc_delta_color};'>{total_asset_btc:.4f} BTC</span>"
     )
     
     fig.update_layout(uniformtext_minsize=10, uniformtext_mode='hide', showlegend=False,
@@ -255,7 +253,7 @@ def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_ass
     st.plotly_chart(fig, use_container_width=True)
 
 def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Dict):
-    st.subheader("📋 保有資産一覧")
+    st.subheader("📋 資産一覧")
     if not portfolio:
         st.info("保有資産はありません。")
         return
