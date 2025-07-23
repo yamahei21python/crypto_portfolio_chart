@@ -74,11 +74,20 @@ if 'currency' not in st.session_state: st.session_state.currency = 'jpy'
 if 'confirm_delete' not in st.session_state: st.session_state.confirm_delete = False
 
 # --- 関数定義 (API関連) ---
+# ===【修正箇所 1/4】APIから24h変動データを取得 ===
 @st.cache_data(ttl=600)
 def get_crypto_data():
     try:
+        # price_change_24h, price_change_percentage_24h を取得
         data = cg.get_coins_markets(vs_currency='jpy', order='market_cap_desc', per_page=20, page=1)
-        return pd.DataFrame(data, columns=['id', 'symbol', 'name', 'current_price']).rename(columns={'current_price': 'price_jpy'})
+        df = pd.DataFrame(data, columns=[
+            'id', 'symbol', 'name', 'current_price', 
+            'price_change_24h', 'price_change_percentage_24h'
+        ])
+        return df.rename(columns={
+            'current_price': 'price_jpy',
+            'price_change_24h': 'price_change_24h_jpy'
+        })
     except Exception as e:
         st.error(f"価格データの取得に失敗しました: {e}")
         return pd.DataFrame()
@@ -97,9 +106,13 @@ def get_exchange_rate(target_currency='usd'):
 # --- アプリ本体 ---
 crypto_data_jpy = get_crypto_data()
 if crypto_data_jpy.empty: st.stop()
+
+# ===【修正箇所 2/4】24h変動データ用のデータマップを作成 ===
 coin_options = {f"{row['name']} ({row['symbol'].upper()})": row['id'] for _, row in crypto_data_jpy.iterrows()}
 price_map_jpy = crypto_data_jpy.set_index('id')['price_jpy'].to_dict()
+price_change_24h_map_jpy = crypto_data_jpy.set_index('id')['price_change_24h_jpy'].to_dict()
 name_map = crypto_data_jpy.set_index('id')['name'].to_dict()
+
 
 # ★確認用★ タイトルを少し変更しました。これが反映されるかご確認ください。
 st.title("🪙 仮想通貨ポートフォリオ管理アプリ") 
@@ -111,24 +124,54 @@ init_bigquery_table()
 tab1, tab2 = st.tabs(["ポートフォリオ", "ウォッチリスト"])
 with tab1:
     transactions_df = get_transactions_from_bq()
-    portfolio, total_asset_value_jpy = {}, 0
+    
+    # ===【修正箇所 3/4】ポートフォリオ全体の24h変動額を集計する変数を追加 ===
+    portfolio, total_asset_value_jpy, total_change_24h_jpy = {}, 0, 0
+
     if not transactions_df.empty:
         for (coin_id, exchange), group in transactions_df.groupby(['コインID', '取引所']):
             buy_quantity = group[group['売買種別'].isin(['購入', '調整（増）'])]['数量'].sum()
             sell_quantity = group[group['売買種別'].isin(['売却', '調整（減）'])]['数量'].sum()
             current_quantity = buy_quantity - sell_quantity
+
             if current_quantity > 1e-8:
                 current_price_jpy = price_map_jpy.get(coin_id, 0)
                 current_value_jpy = current_quantity * current_price_jpy
+                
+                # 保有資産ごとの24h変動額を計算
+                change_24h_for_coin_jpy = price_change_24h_map_jpy.get(coin_id, 0)
+                asset_change_24h_jpy = current_quantity * change_24h_for_coin_jpy
+                
                 portfolio[(coin_id, exchange)] = {"コイン名": name_map.get(coin_id, coin_id), "取引所": exchange, "保有数量": current_quantity, "現在価格(JPY)": current_price_jpy, "評価額(JPY)": current_value_jpy}
                 total_asset_value_jpy += current_value_jpy
+                total_change_24h_jpy += asset_change_24h_jpy # 全体の変動額に加算
     
+    # ===【修正箇所 4/4】ポートフォリオサマリーに24h変動額・変動率を表示 ===
     st.header("📈 ポートフォリオサマリー")
+    
+    # 表示通貨に変換
+    display_total_asset = total_asset_value_jpy * exchange_rate
+    display_total_change_24h = total_change_24h_jpy * exchange_rate
+
+    # 24時間前の資産価値から変動率を計算 (ゼロ除算を回避)
+    yesterday_asset_value_jpy = total_asset_value_jpy - total_change_24h_jpy
+    if yesterday_asset_value_jpy > 0:
+        total_change_percentage_24h = (total_change_24h_jpy / yesterday_asset_value_jpy) * 100
+    else:
+        total_change_percentage_24h = 0
+    
+    # BTC換算
     btc_price_jpy = price_map_jpy.get('bitcoin', 0)
     total_asset_btc = total_asset_value_jpy / btc_price_jpy if btc_price_jpy > 0 else 0
-    display_total_asset = total_asset_value_jpy * exchange_rate
+    
+    # メトリクス表示
     col1, col2 = st.columns(2)
-    col1.metric(f"保有資産合計 ({selected_currency.upper()})", f"{currency_symbol}{display_total_asset:,.2f}")
+    delta_str = f"{currency_symbol}{display_total_change_24h:,.2f} ({total_change_percentage_24h:+.2f}%)"
+    col1.metric(
+        label=f"保有資産合計 ({selected_currency.upper()})",
+        value=f"{currency_symbol}{display_total_asset:,.2f}",
+        delta=delta_str
+    )
     col2.metric("保有資産合計 (BTC)", f"{total_asset_btc:.8f} BTC")
     
     st.markdown("---")
@@ -155,9 +198,6 @@ with tab1:
             portfolio_df_display['評価額'] = portfolio_df_display['評価額(JPY)'] * exchange_rate
             portfolio_df_display = portfolio_df_display.sort_values(by='評価額', ascending=False)
             
-            # ===【最重要修正箇所】===
-            # format引数に通貨記号(¥や$)を含めるとエラーになるため、削除しました。
-            # "%,.2f" は「カンマ区切り、小数点以下2桁」を意味します。
             asset_list_config = {
                 "コイン名": "コイン名",
                 "取引所": "取引所",
@@ -215,7 +255,6 @@ with tab1:
 
     st.subheader("🗒️ 取引履歴")
     if not transactions_df.empty:
-        # ===【修正箇所】===
         history_config = {
             "取引日": st.column_config.DatetimeColumn(format="YYYY/MM/DD HH:mm"), 
             "数量": st.column_config.NumberColumn(format="%.6f"), 
@@ -253,14 +292,21 @@ with tab2:
     watchlist_df = crypto_data_jpy.copy()
     watchlist_df['現在価格'] = watchlist_df['price_jpy'] * exchange_rate
     
-    # ===【修正箇所】===
+    # ===【おまけ修正】ウォッチリストに24h変動率を追加 ===
     watchlist_config = {
-        "symbol": "シンボル", "name": "コイン名",
+        "symbol": "シンボル",
+        "name": "コイン名",
         "現在価格": st.column_config.NumberColumn(
-            f"現在価格 ({selected_currency.upper()})", 
+            f"現在価格 ({selected_currency.upper()})",
             format="%,.2f"
+        ),
+        "price_change_percentage_24h": st.column_config.NumberColumn(
+            "24h変動率 (%)",
+            format="%.2f"
         )
     }
     st.dataframe(
-        watchlist_df.sort_values(by='現在価格', ascending=False)[['symbol', 'name', '現在価格']], hide_index=True, use_container_width=True,
-        column_config=watchlist_config)
+        watchlist_df.sort_values(by='price_jpy', ascending=False)[['symbol', 'name', '現在価格', 'price_change_percentage_24h']],
+        hide_index=True, use_container_width=True,
+        column_config=watchlist_config
+    )
