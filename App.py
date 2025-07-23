@@ -272,6 +272,7 @@ def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_ass
     st.plotly_chart(fig, use_container_width=True)
 
 # ★★★ 変更点 ★★★
+# ★★★ 変更点 ★★★
 def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Dict):
     """保有資産一覧をタブ形式で表示する（コイン別、取引所別、詳細）"""
     st.subheader("📋 保有資産一覧")
@@ -306,11 +307,18 @@ def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Di
     with tab_detail:
         df_display = portfolio_df.copy().sort_values(by='評価額_display', ascending=False)
         df_display['現在価格_display'] = df_display['現在価格(JPY)'] * rate
-        st.session_state.before_edit_df = df_display.copy()
-
+        
+        # --- 修正箇所 START ---
+        # 先に表示用の列をすべて作成する
         df_display['評価額'] = df_display['評価額_display'].apply(lambda x: format_jpy(x, symbol))
         df_display['現在価格'] = df_display['現在価格_display'].apply(lambda x: format_jpy(x, symbol))
         
+        # 完成したDataFrameをセッションステートに保存する
+        # このように順序を入れ替えることで、data_editorに渡すデータとsession_stateのデータの構造が一致する
+        if 'before_edit_df' not in st.session_state or not st.session_state.before_edit_df.equals(df_display):
+             st.session_state.before_edit_df = df_display.copy()
+        # --- 修正箇所 END ---
+
         column_config = {
             "コイン名": "コイン名", "取引所": "取引所",
             "保有数量": st.column_config.NumberColumn(format="%.8f"),
