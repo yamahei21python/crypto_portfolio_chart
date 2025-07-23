@@ -10,7 +10,7 @@
 - Google BigQueryをバックエンドとした取引履歴の永続化
 - ポートフォリオの円グラフおよび資産一覧での可視化
 - JPY建て、USD建てでの資産評価表示
-- 取引履歴の追加、編集（数量調整）、削除
+- 取引履歴の追加、編集（数量・取引所）、削除 【変更点】
 - 時価総額ランキング（ウォッチリスト）の表示
 """
 
@@ -184,6 +184,81 @@ def delete_transaction_from_bq(transaction: pd.Series) -> bool:
         return True
     except Exception as e:
         st.error(f"取引の削除中にエラーが発生しました: {e}")
+        return False
+
+# 【変更点】取引履歴を更新する関数を追加
+def update_transaction_in_bq(original_transaction: pd.Series, updated_data: Dict[str, Any]) -> bool:
+    """
+    指定された取引データをBigQueryテーブルで更新します。
+    SQLインジェクションを防ぐため、パラメータ化クエリを使用します。
+
+    Args:
+        original_transaction: 更新対象の元の取引データ（pandas.Series）。WHERE句の特定に使用。
+        updated_data: 更新後のデータを含む辞書。キーはBigQueryの列名（例: 'quantity', 'exchange'）。
+
+    Returns:
+        bool: 更新が成功した場合はTrue、失敗した場合はFalse。
+    """
+    if not bq_client: return False
+    
+    set_clauses = []
+    query_params = []
+    
+    # SET句とそれに対応するパラメータを動的に構築
+    for key, value in updated_data.items():
+        set_clauses.append(f"{key} = @{key}")
+        # スキーマから型情報を取得してパラメータを作成
+        field_type = "STRING" # デフォルト
+        for field in BIGQUERY_SCHEMA:
+            if field.name == key:
+                field_type = field.field_type
+                break
+        query_params.append(bigquery.ScalarQueryParameter(key, field_type, value))
+
+    if not set_clauses:
+        st.warning("更新する項目がありません。")
+        return False
+        
+    set_sql = ", ".join(set_clauses)
+    
+    # WHERE句のパラメータを追加（元の取引データから）
+    # delete_transaction_from_bq と同じロジックでレコードを特定
+    where_params = [
+        bigquery.ScalarQueryParameter("where_transaction_date", "TIMESTAMP", original_transaction['取引日']),
+        bigquery.ScalarQueryParameter("where_coin_id", "STRING", original_transaction['コインID']),
+        bigquery.ScalarQueryParameter("where_exchange", "STRING", original_transaction['取引所']),
+        bigquery.ScalarQueryParameter("where_transaction_type", "STRING", original_transaction['売買種別']),
+        bigquery.ScalarQueryParameter("where_quantity", "FLOAT64", original_transaction['数量']),
+    ]
+    
+    # WHERE句で一意に特定する必要がある
+    query = f"""
+        UPDATE `{TABLE_FULL_ID}`
+        SET {set_sql}
+        WHERE transaction_date = @where_transaction_date
+          AND coin_id = @where_coin_id
+          AND exchange = @where_exchange
+          AND transaction_type = @where_transaction_type
+          AND quantity = @where_quantity
+    """
+    
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=query_params + where_params
+    )
+    
+    try:
+        query_job = bq_client.query(query, job_config=job_config)
+        query_job.result() # 結果を待つ
+        
+        # DMLの実行結果を確認。num_dml_affected_rowsがNoneの場合もある
+        if query_job.num_dml_affected_rows is None or query_job.num_dml_affected_rows > 0:
+            return True
+        else:
+            st.error("更新対象の取引が見つかりませんでした。ページを再読み込みしてください。")
+            return False
+            
+    except Exception as e:
+        st.error(f"取引の更新中にエラーが発生しました: {e}")
         return False
 
 def get_transactions_from_bq() -> pd.DataFrame:
@@ -515,7 +590,7 @@ def _render_summary_by_exchange(df: pd.DataFrame, currency: str):
     st.markdown('</div>', unsafe_allow_html=True)
 
 def _render_detailed_portfolio(df: pd.DataFrame, currency: str, rate: float):
-    """資産一覧（詳細）タブをレンダリングし、数量の直接編集機能を提供します。"""
+    """資産一覧（詳細）タブをレンダリングし、保有数量の直接編集機能を提供します。"""
     display_df = df.copy().sort_values(by='評価額_display', ascending=False)
     symbol = CURRENCY_SYMBOLS[currency]
     price_precision = 4 if currency == 'jpy' else 2
@@ -604,32 +679,102 @@ def display_transaction_form(coin_options: Dict[str, str], name_map: Dict[str, s
                     st.success(f"{transaction['coin_name']}の{transaction_type}取引を登録しました。")
                     st.rerun()
 
+# 【変更点】取引履歴の編集・削除機能を持つように全面的に改修
 def display_transaction_history(transactions_df: pd.DataFrame, currency: str):
-    """取引履歴の一覧と削除ボタンを表示します。"""
+    """取引履歴の一覧、編集、削除機能を表示します。"""
     st.subheader("🗒️ 取引履歴")
     if transactions_df.empty:
         st.info("まだ取引履歴がありません。")
         return
-    
-    # ヘッダー表示
-    cols = st.columns([3, 2, 2, 2, 2, 1])
+
+    # --- 編集フォームの表示 ---
+    # セッションステートに編集データがある場合、モーダル風のフォームを表示
+    if 'edit_transaction_data' in st.session_state:
+        with st.container(border=True): # フォームをコンテナで囲んで目立たせる
+            st.subheader("取引履歴の編集")
+            
+            edit_data = st.session_state['edit_transaction_data']
+            original_index = edit_data['index']
+            original_row = transactions_df.loc[original_index]
+
+            with st.form(key=f"edit_form_{currency}"):
+                st.info(f"取引日時: {original_row['取引日'].strftime('%Y/%m/%d %H:%M')} | コイン名: {original_row['コイン名']}")
+
+                c1, c2 = st.columns(2)
+                with c1:
+                    new_quantity = st.number_input(
+                        "数量", value=original_row['数量'], min_value=0.0, format="%.8f"
+                    )
+                with c2:
+                    # DBに保存されている取引所がリストにない場合に備える
+                    try:
+                        current_exchange_index = EXCHANGES_ORDERED.index(original_row['取引所'])
+                    except ValueError:
+                        current_exchange_index = 0 # 見つからなければ先頭を選択
+
+                    new_exchange = st.selectbox(
+                        "取引所", options=EXCHANGES_ORDERED, index=current_exchange_index
+                    )
+                
+                # 更新・キャンセルボタン
+                submit_col, cancel_col = st.columns([1, 1])
+                submitted = submit_col.form_submit_button("更新する", use_container_width=True)
+                cancelled = cancel_col.form_submit_button("キャンセル", use_container_width=True)
+
+                if submitted:
+                    updated_values = {}
+                    # 変更があった項目をチェック
+                    if not np.isclose(new_quantity, original_row['数量']):
+                        updated_values['quantity'] = new_quantity
+                    if new_exchange != original_row['取引所']:
+                        updated_values['exchange'] = new_exchange
+                    
+                    if updated_values:
+                        if update_transaction_in_bq(original_row, updated_values):
+                            st.toast("取引を更新しました。", icon="✅")
+                            del st.session_state['edit_transaction_data']
+                            st.rerun()
+                    else:
+                        st.toast("変更がありません。", icon="ℹ️")
+                        del st.session_state['edit_transaction_data']
+                        st.rerun()
+                
+                if cancelled:
+                    del st.session_state['edit_transaction_data']
+                    st.rerun()
+        st.markdown("---")
+
+
+    # --- 取引履歴一覧の表示 ---
+    cols = st.columns([3, 2, 2, 2, 3, 2]) # レイアウト調整
     headers = ["取引日時", "コイン名", "取引所", "売買種別", "数量", "操作"]
     for col, header in zip(cols, headers):
         col.markdown(f"**{header}**")
     
     # 履歴を1行ずつ表示
-    for _, row in transactions_df.iterrows():
-        unique_key = f"delete_{currency}_{row['取引日'].timestamp()}_{row['コインID']}_{row['数量']}"
-        cols = st.columns([3, 2, 2, 2, 2, 1])
+    for index, row in transactions_df.iterrows():
+        unique_suffix = f"{currency}_{index}"
+        
+        cols = st.columns([3, 2, 2, 2, 3, 2])
         cols[0].text(row['取引日'].strftime('%Y/%m/%d %H:%M'))
         cols[1].text(row['コイン名'])
         cols[2].text(row['取引所'])
         cols[3].text(row['売買種別'])
         cols[4].text(f"{row['数量']:.8f}".rstrip('0').rstrip('.'))
-        if cols[5].button("削除", key=unique_key):
-            if delete_transaction_from_bq(row):
-                st.toast(f"取引を削除しました: {row['取引日'].strftime('%Y/%m/%d')}の{row['コイン名']}取引", icon="🗑️")
+        
+        with cols[5]:
+            op_c1, op_c2 = st.columns(2)
+            if op_c1.button("編集", key=f"edit_{unique_suffix}", use_container_width=True):
+                st.session_state['edit_transaction_data'] = row.to_dict()
+                st.session_state['edit_transaction_data']['index'] = index
                 st.rerun()
+
+            if op_c2.button("🗑️", key=f"delete_{unique_suffix}", use_container_width=True, help="この取引を削除します"):
+                if delete_transaction_from_bq(row):
+                    st.toast(f"取引を削除しました: {row['取引日'].strftime('%Y/%m/%d')}の{row['コイン名']}取引", icon="🗑️")
+                    if 'edit_transaction_data' in st.session_state:
+                         del st.session_state['edit_transaction_data']
+                    st.rerun()
 
 def display_database_management(currency: str):
     """データベースリセット（全データ削除）機能を表示します。"""
@@ -736,7 +881,6 @@ def render_watchlist_tab(market_data: pd.DataFrame, currency: str, rate: float):
 
 def main():
     """アプリケーションのメインエントリポイント。"""
-    # ★★★★★ ここからが変更箇所 ★★★★★
     
     # --- ページタイトルと更新ボタン ---
     col1, col2 = st.columns([4, 1])
@@ -753,8 +897,6 @@ def main():
             st.rerun()
 
     st.markdown(RIGHT_ALIGN_STYLE, unsafe_allow_html=True)
-    
-    # ★★★★★ ここまでが変更箇所 ★★★★★
     
     # BigQueryクライアントがなければ処理を停止
     if not bq_client:
