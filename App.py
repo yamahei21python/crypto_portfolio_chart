@@ -221,7 +221,7 @@ with tab2:
     watchlist_config = {
         "symbol": "シンボル",
         "name": "コイン名",
-        "現在価格": st.column_config.NumberColumn(f"現在価格 ({selected_currency.upper()})", format=",.2f") # 通貨記号を削除
+        "現在価格": st.column_config.NumberColumn(f"現在価格 ({selected_currency.upper()})", format=f"{currency_symbol}%,.2f"),
     }
 
     st.dataframe(
