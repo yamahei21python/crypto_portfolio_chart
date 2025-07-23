@@ -391,6 +391,7 @@ def display_database_management(currency: str):
                 st.session_state[confirm_key] = True
                 st.rerun()
 
+# ★★★ 変更点 ★★★
 def render_watchlist_tab(market_data: pd.DataFrame, currency: str, rate: float):
     st.header(f"時価総額トップ20 ({currency.upper()})")
     
@@ -412,9 +413,18 @@ def render_watchlist_tab(market_data: pd.DataFrame, currency: str, rate: float):
         "24h変動率": st.column_config.NumberColumn("24h変動率 (%)", format="%.2f%%")}
 
     st.markdown('<div class="right-align-table">', unsafe_allow_html=True)
+    
+    # 全ての行が表示されるように高さを指定
+    df_to_display = watchlist_df.sort_values(by='market_cap', ascending=False)[['銘柄', '現在価格', '時価総額', '24h変動率']]
+    # 行数に基づいて高さを計算 (1行あたり約35px + ヘッダー分)
+    height = (len(df_to_display) + 1) * 35 + 3
     st.dataframe(
-        watchlist_df.sort_values(by='market_cap', ascending=False)[['銘柄', '現在価格', '時価総額', '24h変動率']],
-        hide_index=True, use_container_width=True, column_config=column_config)
+        df_to_display,
+        hide_index=True, 
+        use_container_width=True, 
+        column_config=column_config,
+        height=height
+    )
     st.markdown('</div>', unsafe_allow_html=True)
 
 def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFrame, currency: str):
