@@ -208,7 +208,6 @@ def calculate_deltas(total_asset_jpy: float, total_change_24h_jpy: float, rate: 
 
 
 # --- UI描画関数 ---
-# ★★★ 変更点: CSSは各描画関数の直前で呼び出す ★★★
 RIGHT_ALIGN_STYLE = """
     <style>
         .right-align-table .stDataFrame [data-testid="stDataFrameData-row"] > div {
@@ -226,7 +225,8 @@ RIGHT_ALIGN_STYLE = """
     </style>
 """
 
-def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_asset_jpy: float, total_asset_btc: float):
+# ★★★ 変更点: 引数に jpy_delta_color と btc_delta_color を追加 ★★★
+def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_asset_jpy: float, total_asset_btc: float, jpy_delta_color: str, btc_delta_color: str):
     st.subheader("📊 資産割合 (コイン別)")
     if not portfolio:
         st.info("取引履歴を登録すると、ここにグラフが表示されます。")
@@ -241,8 +241,14 @@ def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_ass
                  title="コイン別資産構成", color_discrete_map=COIN_COLORS)
     fig.update_traces(textposition='inside', textinfo='text', texttemplate=f"%{{label}} (%{{percent}})<br>{symbol}%{{value:,.0f}}",
                       textfont_size=12, marker=dict(line=dict(color='#FFFFFF', width=2)), direction='clockwise', rotation=0)
-    annotation_text = (f"<b>合計資産</b><br><span style='font-size: 1.2em;'>{symbol}{total_asset_jpy * rate:,.0f}</span><br>"
-                       f"<span style='font-size: 0.9em;'>{total_asset_btc:.4f} BTC</span>")
+    
+    # ★★★ 変更点: アノテーションテキストに色情報を追加 ★★★
+    annotation_text = (
+        f"<b>合計資産</b><br>"
+        f"<span style='font-size: 1.2em; color: {jpy_delta_color};'>{symbol}{total_asset_jpy * rate:,.0f}</span><br>"
+        f"<span style='font-size: 0.9em; color: {btc_delta_color};'>{total_asset_btc:.4f} BTC</span>"
+    )
+    
     fig.update_layout(uniformtext_minsize=10, uniformtext_mode='hide', showlegend=False,
                       margin=dict(t=30, b=0, l=0, r=0),
                       annotations=[dict(text=annotation_text, x=0.5, y=0.5, font_size=16, showarrow=False)])
@@ -320,7 +326,6 @@ def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Di
             del st.session_state[f'before_edit_df_{currency}']
             st.rerun()
 
-# ★★★ 変更点: キーをユニークにする ★★★
 def display_transaction_form(coin_options: Dict, name_map: Dict, currency: str):
     with st.expander("取引履歴の登録", expanded=False):
         with st.form(key=f"transaction_form_{currency}", clear_on_submit=True):
@@ -346,7 +351,6 @@ def display_transaction_form(coin_options: Dict, name_map: Dict, currency: str):
                     st.success(f"{transaction['coin_name']}の{transaction_type}取引を登録しました。")
                     st.rerun()
 
-# ★★★ 変更点: キーをユニークにする ★★★
 def display_transaction_history(transactions_df: pd.DataFrame, currency: str):
     st.subheader("🗒️ 取引履歴")
     if transactions_df.empty:
@@ -366,10 +370,8 @@ def display_transaction_history(transactions_df: pd.DataFrame, currency: str):
                 st.toast(f"取引を削除しました: {row['取引日'].strftime('%Y/%m/%d')}の{row['コイン名']}取引", icon="🗑️")
                 st.rerun()
 
-# ★★★ 変更点: キーをユニークにする ★★★
 def display_database_management(currency: str):
     st.subheader("⚙️ データベース管理")
-    # `confirm_delete`の状態も通貨ごとに管理
     confirm_key = f'confirm_delete_{currency}'
     if confirm_key not in st.session_state:
         st.session_state[confirm_key] = False
@@ -418,7 +420,6 @@ def render_watchlist_tab(market_data: pd.DataFrame, currency: str, rate: float):
         hide_index=True, use_container_width=True, column_config=column_config)
     st.markdown('</div>', unsafe_allow_html=True)
 
-# ★★★ 変更点: currency引数を追加し、各関数に渡す ★★★
 def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFrame, currency: str):
     rate = get_exchange_rate(currency)
     symbol = CURRENCY_SYMBOLS[currency]
@@ -434,7 +435,8 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
 
     c1, c2 = st.columns([1, 1.2])
     with c1:
-        display_asset_pie_chart(portfolio, rate, symbol, total_asset_jpy, total_asset_btc)
+        # ★★★ 変更点: display_asset_pie_chart に jpy_delta_color と btc_delta_color を渡す ★★★
+        display_asset_pie_chart(portfolio, rate, symbol, total_asset_jpy, total_asset_btc, jpy_delta_color, btc_delta_color)
         st.markdown(f"""
         <div style="text-align: center; margin-top: 5px; line-height: 1.4;">
             <span style="font-size: 1.0rem; color: {jpy_delta_color};">{delta_display_str}</span>
