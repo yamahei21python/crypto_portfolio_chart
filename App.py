@@ -287,7 +287,8 @@ def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Di
     column_config = {
         "コイン名": "コイン名", "取引所": "取引所",
         "保有数量": st.column_config.NumberColumn(format="%.8f"),
-        "現在価格": st.column_config.NumberColumn(f"現在価格 ({currency.upper()})", format="%,.2f"),
+        "現在価格": st.column_config.NumberColumn(format="%.8f"),
+        #"現在価格": st.column_config.NumberColumn(f"現在価格 ({currency.upper()})", format="%,.2f"),
         "評価額": st.column_config.NumberColumn(f"評価額 ({currency.upper()})", format="%,.0f"),
     }
 
