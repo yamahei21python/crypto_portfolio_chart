@@ -173,8 +173,14 @@ with tab1:
                 ),
             }
 
-            edited_df = st.data_editor(portfolio_df_display[['コイン名', '取引所', '保有数量', '現在価格', '評価額']], disabled=['コイン名', '取引所', '現在価格', '評価額'], column_config=asset_list_config, use_container_width=True, key="portfolio_editor", hide_index=True)
-            
+            edited_df = st.data_editor(
+                portfolio_df_display[['コイン名', '取引所', '保有数量', '現在価格', '評価額']], 
+                disabled=['コイン名', '取引所', '現在価格', '評価額'], 
+                column_config=asset_list_config, 
+                use_container_width=True, 
+                key="portfolio_editor_v2",  # ← ここを変更！
+                hide_index=True
+            )
             update_triggered = False
             if not edited_df.equals(portfolio_df_display[['コイン名', '取引所', '保有数量', '現在価格', '評価額']]):
                 merged_df = pd.merge(portfolio_df_before_edit, edited_df, on=['コイン名', '取引所'], suffixes=('_before', '_after'))
