@@ -238,8 +238,23 @@ def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_ass
     pie_data = pie_data.sort_values(by="評価額(JPY)", ascending=False)
     pie_data['評価額_display'] = pie_data['評価額(JPY)'] * rate
     fig = px.pie(pie_data, values='評価額_display', names='コイン名', color='コイン名', hole=0.5, color_discrete_map=COIN_COLORS)
-    fig.update_traces(textposition='inside', textinfo='text', texttemplate=f"%{{label}} (%{{percent}})<br>{symbol}%{{value:,.0f}}",
-                      textfont_size=12, marker=dict(line=dict(color='#FFFFFF', width=2)), direction='clockwise', rotation=0)
+    
+    # ★★★【ご依頼の修正】円グラフ内のテキスト行間を調整 ★★★
+    # texttemplate内でHTMLのspanタグとCSSのline-heightスタイルを使い、テキストの行間を広げます。
+    # line-heightの値を1.6に設定していますが、この数値を変更することでお好みの間隔に調整可能です。
+    text_template = (
+        "<span style='line-height: 1.6;'>"
+        "%{label} (%{percent})<br>"
+        f"{symbol}%{{value:,.0f}}"
+        "</span>"
+    )
+    fig.update_traces(textposition='inside', 
+                      textinfo='text', 
+                      texttemplate=text_template,
+                      textfont_size=12, 
+                      marker=dict(line=dict(color='#FFFFFF', width=2)), 
+                      direction='clockwise', 
+                      rotation=0)
     
     # ★★★ 変更点: アノテーションテキストに色情報を追加 ★★★
     annotation_text = (
