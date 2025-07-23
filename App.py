@@ -51,7 +51,7 @@ def add_transaction_to_bq(date, coin_id, coin_name, exchange, type, qty, price, 
 def get_transactions_from_bq():
     query = f"SELECT * FROM `{TABLE_FULL_ID}` ORDER BY transaction_date DESC"
     try:
-        df = client.query(query).to_dataframe()
+        df = client.query(query).to_dataframe(create_bqstorage_client=False)
     except google.api_core.exceptions.NotFound:
         st.warning("取引履歴テーブルが見つかりません。最初の取引を登録してください。")
         init_bigquery_table()
@@ -148,15 +148,12 @@ with tab1:
             portfolio_df_display['評価額'] = portfolio_df_display['評価額(JPY)'] * exchange_rate
             portfolio_df_display.set_index(['コイン名', '取引所'], inplace=True)
             
-            # ### エラー修正 ###
             edited_df = st.data_editor(
                 portfolio_df_display[['保有数量', '現在価格', '評価額']],
                 disabled=['現在価格', '評価額'],
                 column_config={
                     "保有数量": st.column_config.NumberColumn(format="%.8f"),
-                    # formatから'%'を削除
                     "現在価格": st.column_config.NumberColumn(f"現在価格 ({selected_currency.upper()})", format=f"{currency_symbol},.2f"),
-                    # formatから'%'を削除
                     "評価額": st.column_config.NumberColumn(f"評価額 ({selected_currency.upper()})", format=f"{currency_symbol},.0f"),
                 }, use_container_width=True, key="portfolio_editor")
 
@@ -200,7 +197,7 @@ with tab1:
         st.dataframe(
             transactions_df[['取引日', 'コイン名', '取引所', '売買種別', '数量', '価格(JPY)']],
             hide_index=True, use_container_width=True,
-            column_config={"取引日": st.column_config.DatetimeColumn("取引日", format="YYYY/MM/DD HH:mm"), "数量": st.column_config.NumberColumn(format="%.6f"), "価格(JPY)": st.column_config.NumberColumn(format="¥,.2f")}) # '%'を削除
+            column_config={"取引日": st.column_config.DatetimeColumn("取引日", format="YYYY/MM/DD HH:mm"), "数量": st.column_config.NumberColumn(format="%.6f"), "価格(JPY)": st.column_config.NumberColumn(format="¥,.2f")})
     else: st.info("まだ取引履歴がありません。")
 
 with tab2:
@@ -211,4 +208,4 @@ with tab2:
     watchlist_df['現在価格'] = watchlist_df['price_jpy'] * exchange_rate
     st.dataframe(
         watchlist_df[['symbol', 'name', '現在価格']], hide_index=True, use_container_width=True,
-        column_config={"symbol": "シンボル", "name": "コイン名", "現在価格": st.column_config.NumberColumn(f"現在価格 ({selected_currency.upper()})", format=f"{currency_symbol},.2f")}) # '%'を削除
+        column_config={"symbol": "シンボル", "name": "コイン名", "現在価格": st.column_config.NumberColumn(f"現在価格 ({selected_currency.upper()})", format=f"{currency_symbol},.2f")})
