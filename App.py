@@ -172,7 +172,6 @@ def format_jpy(value: float) -> str:
     """数値をカンマ区切りの文字列にフォーマットする（小数点以下0桁）"""
     return f"{value:,.0f}"
 
-# ▼▼▼【変更箇所】変動情報（文字列と色）を計算する関数を新設 ▼▼▼
 def calculate_deltas(total_asset_jpy: float, total_change_24h_jpy: float, rate: float, symbol: str, price_map: Dict, price_change_map: Dict) -> Tuple[str, str, str, str]:
     """24時間変動に関する表示用文字列と色を計算して返す"""
     # JPY建ての計算
@@ -202,10 +201,8 @@ def calculate_deltas(total_asset_jpy: float, total_change_24h_jpy: float, rate: 
             btc_delta_color = "green" if change_btc >= 0 else "red"
             
     return delta_display_str, jpy_delta_color, delta_btc_str, btc_delta_color
-# ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
 # --- UI描画関数 ---
-# ▼▼▼【変更箇所】display_summary関数を簡素化 ▼▼▼
 def display_summary(total_asset_jpy: float, currency: str, rate: float, symbol: str, total_asset_btc: float, delta_display_str: str, delta_btc_str: str):
     """ポートフォリオのサマリーメトリクスを表示する"""
     st.header("📈 ポートフォリオサマリー")
@@ -214,7 +211,6 @@ def display_summary(total_asset_jpy: float, currency: str, rate: float, symbol: 
     col1, col2 = st.columns(2)
     col1.metric(f"保有資産合計 ({currency.upper()})", f"{symbol}{display_total_asset:,.2f}", delta_display_str)
     col2.metric("保有資産合計 (BTC)", f"{total_asset_btc:.8f} BTC", delta_btc_str)
-# ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
 def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_asset_jpy: float, total_asset_btc: float):
     """資産割合の円グラフを表示し、中央に合計資産、各スライスに詳細情報を表示する"""
@@ -443,7 +439,6 @@ def main():
         portfolio, total_asset_jpy, total_change_24h_jpy = calculate_portfolio(transactions_df, price_map, price_change_map, name_map)
         total_asset_btc = calculate_btc_value(total_asset_jpy, price_map)
         
-        # ▼▼▼【変更箇所】新設した関数で変動情報を計算 ▼▼▼
         delta_display_str, jpy_delta_color, delta_btc_str, btc_delta_color = calculate_deltas(
             total_asset_jpy, total_change_24h_jpy, exchange_rate, currency_symbol, price_map, price_change_map
         )
@@ -456,15 +451,45 @@ def main():
         with c1:
             display_asset_pie_chart(portfolio, exchange_rate, currency_symbol, total_asset_jpy, total_asset_btc)
             
-            # ▼▼▼【変更箇所】円グラフの下に変動情報を表示 ▼▼▼
+            # ▼▼▼【変更箇所】円グラフの下に変動情報をポートフォリオサマリーと同様のst.metricスタイルで表示 ▼▼▼
             st.divider()
             d1, d2 = st.columns(2)
             with d1:
-                st.markdown(f"**24H変動 ({selected_currency.upper()})**")
-                st.markdown(f"<p style='color:{jpy_delta_color}; font-size:1.1em; font-weight:bold;'>{delta_display_str}</p>", unsafe_allow_html=True)
+                # delta_display_str を value と delta に分割
+                # 例: "¥-1,234.56 (-1.23%)" -> value="¥-1,234.56", delta="-1.23%"
+                try:
+                    jpy_value_part, jpy_delta_part = delta_display_str.rsplit(' (', 1)
+                    jpy_delta_part = jpy_delta_part[:-1] # 最後の ')' を削除
+                except ValueError: # パーセント部分がなく分割できない場合
+                    jpy_value_part = delta_display_str
+                    jpy_delta_part = None
+                
+                d1.metric(
+                    label=f"24H変動 ({selected_currency.upper()})",
+                    value=jpy_value_part,
+                    delta=jpy_delta_part
+                )
+
             with d2:
-                st.markdown(f"**24H変動 (BTC)**")
-                st.markdown(f"<p style='color:{btc_delta_color}; font-size:1.1em; font-weight:bold;'>{delta_btc_str}</p>", unsafe_allow_html=True)
+                # delta_btc_str を value と delta に分割
+                if delta_btc_str != "N/A":
+                    try:
+                        btc_value_part, btc_delta_part = delta_btc_str.rsplit(' (', 1)
+                        btc_delta_part = btc_delta_part[:-1] # 最後の ')' を削除
+                    except ValueError:
+                        btc_value_part = delta_btc_str
+                        btc_delta_part = None
+                        
+                    d2.metric(
+                        label="24H変動 (BTC)",
+                        value=btc_value_part,
+                        delta=btc_delta_part
+                    )
+                else:
+                    d2.metric(
+                        label="24H変動 (BTC)",
+                        value="N/A"
+                    )
             # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
             
         with c2:
