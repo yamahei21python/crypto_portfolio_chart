@@ -146,9 +146,9 @@ with tab1:
             portfolio_df_display = portfolio_df.copy()
             portfolio_df_display['現在価格'] = portfolio_df_display['現在価格(JPY)'] * exchange_rate
             portfolio_df_display['評価額'] = portfolio_df_display['評価額(JPY)'] * exchange_rate
-            
-            # ### エラー修正 ###
-            # formatから通貨記号を削除し、数値の書式のみ指定
+
+            # ### 最終修正 ###
+            # ユーザーの発見に基づき、正しいformat指定に修正
             asset_list_config = {
                 "コイン名": "コイン名",
                 "取引所": "取引所",
@@ -198,11 +198,11 @@ with tab1:
 
     st.subheader("🗒️ 取引履歴")
     if not transactions_df.empty:
-        # ### エラー修正 ###
+        # ### 最終修正 ###
         history_config = {
             "取引日": st.column_config.DatetimeColumn(format="YYYY/MM/DD HH:mm"), 
             "数量": st.column_config.NumberColumn(format="%.6f"), 
-            "価格(JPY)": st.column_config.NumberColumn(format=",.2f") # 通貨記号を削除
+            "価格(JPY)": st.column_config.NumberColumn(format="¥%,.2f")
         }
         st.dataframe(
             transactions_df[['取引日', 'コイン名', '取引所', '売買種別', '数量', '価格(JPY)']],
@@ -217,11 +217,11 @@ with tab2:
     watchlist_df = crypto_data_jpy.copy()
     watchlist_df['現在価格'] = watchlist_df['price_jpy'] * exchange_rate
     
-    # ### エラー修正 ###
+    # ### 最終修正 ###
     watchlist_config = {
         "symbol": "シンボル",
         "name": "コイン名",
-        "現在価格": st.column_config.NumberColumn(f"現在価格 ({selected_currency.upper()})", format=f"{currency_symbol}%,.2f"),
+        "現在価格": st.column_config.NumberColumn(f"現在価格 ({selected_currency.upper()})", format=f"{currency_symbol}%,.2f")
     }
 
     st.dataframe(
