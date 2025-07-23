@@ -343,7 +343,7 @@ def display_transaction_form(coin_options: Dict, name_map: Dict):
                 exchange = st.selectbox(
                     "取引所",
                     options=EXCHANGES_ORDERED,
-                    index=2  # デフォルトを'Binance'に設定 (リストの3番目)
+                    index=0
                 )
                 # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
             with c3:
