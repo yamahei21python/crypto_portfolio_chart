@@ -6,7 +6,7 @@
 現在の資産状況を可視化するためのツールです。
 
 主な機能:
-- CoinGecko APIを利用したリアルタイム価格取得
+- CoinGecko APIを利用したリアルタイム価格取得（手動更新機能付き）
 - Google BigQueryをバックエンドとした取引履歴の永続化
 - ポートフォリオの円グラフおよび資産一覧での可視化
 - JPY建て、USD建てでの資産評価表示
@@ -467,7 +467,6 @@ def _render_summary_by_coin(df: pd.DataFrame, currency: str, rate: float):
         現在価格_jpy=('現在価格(JPY)', 'first')
     ).sort_values(by='評価額_display', ascending=False).reset_index()
 
-    # ★変更点★ 割合(%)を計算するために総資産額を取得
     total_assets_display = summary_df['評価額_display'].sum()
 
     symbol = CURRENCY_SYMBOLS[currency]
@@ -476,7 +475,6 @@ def _render_summary_by_coin(df: pd.DataFrame, currency: str, rate: float):
     # 表示用の列をフォーマット
     summary_df['評価額'] = summary_df['評価額_display'].apply(lambda x: format_currency(x, symbol, 0))
     
-    # ★変更点★ 割合(%)を計算し、新しい列を追加
     if total_assets_display > 0:
         summary_df['割合'] = (summary_df['評価額_display'] / total_assets_display) * 100
     else:
@@ -487,13 +485,11 @@ def _render_summary_by_coin(df: pd.DataFrame, currency: str, rate: float):
     
     st.markdown('<div class="right-align-table">', unsafe_allow_html=True)
     st.dataframe(
-        # ★変更点★ 表示列に「割合」を追加
         summary_df[['コイン名', '保有数量', '評価額', '割合', '現在価格']],
         column_config={
             "コイン名": "コイン名", 
             "保有数量": "保有数量",
             "評価額": f"評価額 ({currency.upper()})",
-            # ★変更点★ 「割合」列のフォーマットを設定
             "割合": st.column_config.NumberColumn("割合", format="%.2f%%"),
             "現在価格": f"現在価格 ({currency.upper()})"
         },
@@ -505,13 +501,11 @@ def _render_summary_by_exchange(df: pd.DataFrame, currency: str):
     """資産一覧（取引所別）タブをレンダリングします。"""
     summary_df = df.groupby("取引所")['評価額_display'].sum().sort_values(ascending=False).reset_index()
     
-    # ★変更点★ 割合(%)を計算するために総資産額を取得
     total_assets_display = summary_df['評価額_display'].sum()
 
     symbol = CURRENCY_SYMBOLS[currency]
     summary_df['評価額'] = summary_df['評価額_display'].apply(lambda x: format_currency(x, symbol, 0))
     
-    # ★変更点★ 割合(%)を計算し、新しい列を追加
     if total_assets_display > 0:
         summary_df['割合'] = (summary_df['評価額_display'] / total_assets_display) * 100
     else:
@@ -519,12 +513,10 @@ def _render_summary_by_exchange(df: pd.DataFrame, currency: str):
 
     st.markdown('<div class="right-align-table">', unsafe_allow_html=True)
     st.dataframe(
-        # ★変更点★ 表示列に「割合」を追加
         summary_df[['取引所', '評価額', '割合']],
         column_config={
             "取引所": "取引所", 
             "評価額": f"評価額 ({currency.upper()})",
-            # ★変更点★ 「割合」列のフォーマットを設定
             "割合": st.column_config.NumberColumn("割合", format="%.2f%%"),
         },
         hide_index=True, use_container_width=True
@@ -753,8 +745,25 @@ def render_watchlist_tab(market_data: pd.DataFrame, currency: str, rate: float):
 
 def main():
     """アプリケーションのメインエントリポイント。"""
-    st.title("🪙 仮想通貨ポートフォリオ管理アプリ")
+    # ★★★★★ ここからが変更箇所 ★★★★★
+    
+    # --- ページタイトルと更新ボタン ---
+    col1, col2 = st.columns([4, 1])
+    with col1:
+        st.title("🪙 仮想通貨ポートフォリオ管理アプリ")
+    with col2:
+        # ボタンを垂直方向に中央揃えするためのスペーサー
+        st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
+        if st.button("🔄 データ更新", use_container_width=True, help="市場価格や為替レートを最新の情報に更新します。"):
+            # st.cache_dataとst.cache_resourceでキャッシュされたデータをすべてクリア
+            st.cache_data.clear()
+            st.cache_resource.clear()
+            st.toast("最新の市場データに更新しました。", icon="🔄")
+            st.rerun()
+
     st.markdown(RIGHT_ALIGN_STYLE, unsafe_allow_html=True)
+    
+    # ★★★★★ ここまでが変更箇所 ★★★★★
     
     # BigQueryクライアントがなければ処理を停止
     if not bq_client:
