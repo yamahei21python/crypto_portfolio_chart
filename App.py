@@ -162,7 +162,6 @@ def get_exchange_rate(target_currency: str) -> float:
 
 # --- データ処理 & フォーマット関数 ---
 def format_currency(value: float, symbol: str, precision: int = 0) -> str:
-    """数値を通貨記号付きのカンマ区切り文字列にフォーマットする"""
     return f"{symbol}{value:,.{precision}f}"
 
 def calculate_portfolio(transactions_df: pd.DataFrame, price_map: Dict, price_change_map: Dict, name_map: Dict) -> (Dict, float, float):
@@ -209,6 +208,24 @@ def calculate_deltas(total_asset_jpy: float, total_change_24h_jpy: float, rate: 
 
 
 # --- UI描画関数 ---
+# ★★★ 変更点: CSSは各描画関数の直前で呼び出す ★★★
+RIGHT_ALIGN_STYLE = """
+    <style>
+        .right-align-table .stDataFrame [data-testid="stDataFrameData-row"] > div {
+            text-align: right !important;
+            justify-content: flex-end !important;
+        }
+        .right-align-table .stDataFrame [data-testid="stDataFrameData-row"] > div:first-child {
+            text-align: left !important;
+            justify-content: flex-start !important;
+        }
+        .right-align-table .stDataFrame [data-testid="stDataFrameData-row"] > div[data-col-id="1"]:not(:first-child) {
+            text-align: left !important;
+            justify-content: flex-start !important;
+        }
+    </style>
+"""
+
 def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_asset_jpy: float, total_asset_btc: float):
     st.subheader("📊 資産割合 (コイン別)")
     if not portfolio:
@@ -218,10 +235,8 @@ def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_ass
     if pie_data.empty or pie_data["評価額(JPY)"].sum() <= 0:
         st.info("保有資産がありません。")
         return
-    
     pie_data = pie_data.sort_values(by="評価額(JPY)", ascending=False)
     pie_data['評価額_display'] = pie_data['評価額(JPY)'] * rate
-    
     fig = px.pie(pie_data, values='評価額_display', names='コイン名', color='コイン名', hole=0.5, 
                  title="コイン別資産構成", color_discrete_map=COIN_COLORS)
     fig.update_traces(textposition='inside', textinfo='text', texttemplate=f"%{{label}} (%{{percent}})<br>{symbol}%{{value:,.0f}}",
@@ -233,45 +248,38 @@ def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_ass
                       annotations=[dict(text=annotation_text, x=0.5, y=0.5, font_size=16, showarrow=False)])
     st.plotly_chart(fig, use_container_width=True)
 
-# ★★★ 変更点: CSSを単純化し、divラッパーで囲む方式に変更 ★★★
 def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Dict):
     st.subheader("📋 保有資産一覧")
     if not portfolio:
         st.info("保有資産はありません。")
         return
-
+    st.markdown(RIGHT_ALIGN_STYLE, unsafe_allow_html=True)
     portfolio_df = pd.DataFrame.from_dict(portfolio, orient='index').reset_index(drop=True)
     portfolio_df['評価額_display'] = portfolio_df['評価額(JPY)'] * rate
-    
     tab_coin, tab_exchange, tab_detail = st.tabs(["コイン別", "取引所別", "詳細"])
     symbol = CURRENCY_SYMBOLS[currency]
 
     with tab_coin:
-        coin_summary = portfolio_df.groupby("コイン名").agg(
-            保有数量=('保有数量', 'sum'), 評価額_display=('評価額_display', 'sum'),
-            現在価格_jpy=('現在価格(JPY)', 'first')
-        ).sort_values(by='評価額_display', ascending=False).reset_index()
-        
+        coin_summary = portfolio_df.groupby("コイン名").agg(保有数量=('保有数量', 'sum'), 評価額_display=('評価額_display', 'sum'),
+                                                         現在価格_jpy=('現在価格(JPY)', 'first')).sort_values(by='評価額_display', ascending=False).reset_index()
         price_precision = 4 if currency == 'jpy' else 2
-        coin_summary['評価額_formatted'] = coin_summary['評価額_display'].apply(lambda x: format_currency(x, symbol, 0))
-        coin_summary['現在価格_formatted'] = (coin_summary['現在価格_jpy'] * rate).apply(lambda x: format_currency(x, symbol, price_precision))
-
+        coin_summary['評価額'] = coin_summary['評価額_display'].apply(lambda x: format_currency(x, symbol, 0))
+        coin_summary['現在価格'] = (coin_summary['現在価格_jpy'] * rate).apply(lambda x: format_currency(x, symbol, price_precision))
+        coin_summary['保有数量'] = coin_summary['保有数量'].apply(lambda x: f"{x:,.8f}".rstrip('0').rstrip('.'))
+        
         st.markdown('<div class="right-align-table">', unsafe_allow_html=True)
-        st.dataframe(coin_summary[['コイン名', '保有数量', '評価額_formatted', '現在価格_formatted']],
-                     column_config={"コイン名": "コイン名", "保有数量": "保有数量",
-                                    "評価額_formatted": f"評価額 ({currency.upper()})",
-                                    "現在価格_formatted": f"現在価格 ({currency.upper()})"},
+        st.dataframe(coin_summary[['コイン名', '保有数量', '評価額', '現在価格']],
+                     column_config={"コイン名": "コイン名", "保有数量": "保有数量", "評価額": f"評価額 ({currency.upper()})", "現在価格": f"現在価格 ({currency.upper()})"},
                      hide_index=True, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
     with tab_exchange:
         exchange_summary = portfolio_df.groupby("取引所")['評価額_display'].sum().sort_values(ascending=False).reset_index()
-        exchange_summary['評価額_formatted'] = exchange_summary['評価額_display'].apply(lambda x: format_currency(x, symbol, 0))
-
+        exchange_summary['評価額'] = exchange_summary['評価額_display'].apply(lambda x: format_currency(x, symbol, 0))
+        
         st.markdown('<div class="right-align-table">', unsafe_allow_html=True)
-        st.dataframe(exchange_summary[['取引所', '評価額_formatted']],
-                     column_config={"取引所": "取引所",
-                                    "評価額_formatted": f"評価額 ({currency.upper()})"},
+        st.dataframe(exchange_summary[['取引所', '評価額']],
+                     column_config={"取引所": "取引所", "評価額": f"評価額 ({currency.upper()})"},
                      hide_index=True, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -282,8 +290,8 @@ def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Di
         df_display['評価額_formatted'] = df_display['評価額_display'].apply(lambda x: format_currency(x, symbol, 0))
         df_display['現在価格_formatted'] = df_display['現在価格_display'].apply(lambda x: format_currency(x, symbol, price_precision))
         
-        if 'before_edit_df' not in st.session_state or not st.session_state.before_edit_df.equals(df_display):
-             st.session_state.before_edit_df = df_display.copy()
+        if f'before_edit_df_{currency}' not in st.session_state or not st.session_state[f'before_edit_df_{currency}'].equals(df_display):
+             st.session_state[f'before_edit_df_{currency}'] = df_display.copy()
         
         column_config = {"コイン名": "コイン名", "取引所": "取引所",
                          "保有数量": st.column_config.NumberColumn("保有数量", format="%.8f"),
@@ -297,8 +305,8 @@ def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Di
                                    key=f"portfolio_editor_{currency}", hide_index=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
-        if not edited_df['保有数量'].equals(st.session_state.before_edit_df['保有数量']):
-            merged_df = pd.merge(st.session_state.before_edit_df, edited_df, on=['コイン名', '取引所'], suffixes=('_before', '_after'))
+        if not edited_df['保有数量'].equals(st.session_state[f'before_edit_df_{currency}']['保有数量']):
+            merged_df = pd.merge(st.session_state[f'before_edit_df_{currency}'], edited_df, on=['コイン名', '取引所'], suffixes=('_before', '_after'))
             for _, row in merged_df.iterrows():
                 if not np.isclose(row['保有数量_before'], row['保有数量_after']):
                     quantity_diff = row['保有数量_after'] - row['保有数量_before']
@@ -309,24 +317,25 @@ def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Di
                                    "price_jpy": 0, "fee_jpy": 0, "total_jpy": 0}
                     if add_transaction_to_bq(transaction):
                         st.toast(f"{coin_name} ({exchange}) の数量を調整: {quantity_diff:+.8f}", icon="✍️")
-            del st.session_state.before_edit_df
+            del st.session_state[f'before_edit_df_{currency}']
             st.rerun()
 
-def display_transaction_form(coin_options: Dict, name_map: Dict):
+# ★★★ 変更点: キーをユニークにする ★★★
+def display_transaction_form(coin_options: Dict, name_map: Dict, currency: str):
     with st.expander("取引履歴の登録", expanded=False):
-        with st.form("transaction_form", clear_on_submit=True):
+        with st.form(key=f"transaction_form_{currency}", clear_on_submit=True):
             st.subheader("新しい取引を登録")
             c1, c2, c3 = st.columns(3)
             with c1:
-                transaction_date = st.date_input("取引日", datetime.now())
-                selected_coin_disp_name = st.selectbox("コイン種別", options=list(coin_options.keys()))
+                transaction_date = st.date_input("取引日", datetime.now(), key=f"date_{currency}")
+                selected_coin_disp_name = st.selectbox("コイン種別", options=list(coin_options.keys()), key=f"coin_{currency}")
             with c2:
-                transaction_type = st.selectbox("売買種別", ["購入", "売却"])
-                exchange = st.selectbox("取引所", options=EXCHANGES_ORDERED, index=2)
+                transaction_type = st.selectbox("売買種別", ["購入", "売却"], key=f"type_{currency}")
+                exchange = st.selectbox("取引所", options=EXCHANGES_ORDERED, index=2, key=f"exchange_{currency}")
             with c3:
-                quantity = st.number_input("数量", min_value=0.0, format="%.8f")
-                price = st.number_input("価格(JPY)", min_value=0.0, format="%.2f")
-                fee = st.number_input("手数料(JPY)", min_value=0.0, format="%.2f")
+                quantity = st.number_input("数量", min_value=0.0, format="%.8f", key=f"qty_{currency}")
+                price = st.number_input("価格(JPY)", min_value=0.0, format="%.2f", key=f"price_{currency}")
+                fee = st.number_input("手数料(JPY)", min_value=0.0, format="%.2f", key=f"fee_{currency}")
             if st.form_submit_button("登録する"):
                 coin_id = coin_options[selected_coin_disp_name]
                 transaction = {"transaction_date": datetime.combine(transaction_date, datetime.min.time()),
@@ -337,7 +346,8 @@ def display_transaction_form(coin_options: Dict, name_map: Dict):
                     st.success(f"{transaction['coin_name']}の{transaction_type}取引を登録しました。")
                     st.rerun()
 
-def display_transaction_history(transactions_df: pd.DataFrame):
+# ★★★ 変更点: キーをユニークにする ★★★
+def display_transaction_history(transactions_df: pd.DataFrame, currency: str):
     st.subheader("🗒️ 取引履歴")
     if transactions_df.empty:
         st.info("まだ取引履歴がありません。")
@@ -346,8 +356,7 @@ def display_transaction_history(transactions_df: pd.DataFrame):
     headers = ["取引日時", "コイン名", "取引所", "売買種別", "数量", "操作"]
     for col, header in zip(cols, headers): col.markdown(f"**{header}**")
     for index, row in transactions_df.iterrows():
-        # ボタンのキーが一意になるように工夫
-        unique_key = f"delete_{row['取引日'].timestamp()}_{row['コインID']}_{row['数量']}"
+        unique_key = f"delete_{currency}_{row['取引日'].timestamp()}_{row['コインID']}_{row['数量']}"
         cols = st.columns([3, 2, 2, 2, 2, 1])
         cols[0].text(row['取引日'].strftime('%Y/%m/%d %H:%M:%S'))
         cols[1].text(row['コイン名']); cols[2].text(row['取引所'])
@@ -357,28 +366,32 @@ def display_transaction_history(transactions_df: pd.DataFrame):
                 st.toast(f"取引を削除しました: {row['取引日'].strftime('%Y/%m/%d')}の{row['コイン名']}取引", icon="🗑️")
                 st.rerun()
 
-def display_database_management():
+# ★★★ 変更点: キーをユニークにする ★★★
+def display_database_management(currency: str):
     st.subheader("⚙️ データベース管理")
+    # `confirm_delete`の状態も通貨ごとに管理
+    confirm_key = f'confirm_delete_{currency}'
+    if confirm_key not in st.session_state:
+        st.session_state[confirm_key] = False
+
     with st.expander("データベースリセット（危険）"):
         st.warning("**警告**: この操作はデータベース上のすべての取引履歴を完全に削除します。この操作は取り消せません。")
-        if st.session_state.get('confirm_delete', False):
+        if st.session_state[confirm_key]:
             st.error("本当によろしいですか？最終確認です。")
             c1, c2 = st.columns(2)
-            if c1.button("はい、すべてのデータを削除します", type="primary", key="confirm_delete_button"):
+            if c1.button("はい、すべてのデータを削除します", type="primary", key=f"confirm_delete_button_{currency}"):
                 reset_bigquery_table()
-                st.session_state.confirm_delete = False
+                st.session_state[confirm_key] = False
                 st.rerun()
-            if c2.button("いいえ、キャンセルします", key="cancel_delete_button"):
-                st.session_state.confirm_delete = False
+            if c2.button("いいえ、キャンセルします", key=f"cancel_delete_button_{currency}"):
+                st.session_state[confirm_key] = False
                 st.rerun()
         else:
-            if st.button("すべての取引履歴をリセットする", key="reset_button"):
-                st.session_state.confirm_delete = True
+            if st.button("すべての取引履歴をリセットする", key=f"reset_button_{currency}"):
+                st.session_state[confirm_key] = True
                 st.rerun()
 
-# ★★★ 変更点: CSSを単純化し、divラッパーで囲む方式に変更 ★★★
 def render_watchlist_tab(market_data: pd.DataFrame, currency: str, rate: float):
-    symbol = CURRENCY_SYMBOLS[currency]
     st.header("⭐ ウォッチリスト")
     st.subheader(f"時価総額トップ20 ({currency.upper()})")
     
@@ -386,13 +399,14 @@ def render_watchlist_tab(market_data: pd.DataFrame, currency: str, rate: float):
         st.warning("時価総額データが取得できませんでした。")
         return
         
+    st.markdown(RIGHT_ALIGN_STYLE, unsafe_allow_html=True)
     watchlist_df = market_data.copy()
+    symbol = CURRENCY_SYMBOLS[currency]
     price_precision = 4 if currency == 'jpy' else 2
     watchlist_df['現在価格_formatted'] = (watchlist_df['price_jpy'] * rate).apply(lambda x: format_currency(x, symbol, price_precision))
     watchlist_df['時価総額_formatted'] = (watchlist_df['market_cap'] * rate).apply(lambda x: format_currency(x, symbol, 0))
     watchlist_df.rename(columns={'name': '銘柄', '現在価格_formatted': '現在価格', '時価総額_formatted': '時価総額',
                                  'price_change_percentage_24h': '24h変動率'}, inplace=True)
-    
     column_config = {
         "銘柄": "銘柄", "現在価格": f"現在価格 ({currency.upper()})",
         "時価総額": f"時価総額 ({currency.upper()})",
@@ -404,7 +418,7 @@ def render_watchlist_tab(market_data: pd.DataFrame, currency: str, rate: float):
         hide_index=True, use_container_width=True, column_config=column_config)
     st.markdown('</div>', unsafe_allow_html=True)
 
-
+# ★★★ 変更点: currency引数を追加し、各関数に渡す ★★★
 def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFrame, currency: str):
     rate = get_exchange_rate(currency)
     symbol = CURRENCY_SYMBOLS[currency]
@@ -431,10 +445,10 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
         display_asset_list(portfolio, currency, rate, name_map)
     
     st.markdown("---")
-    display_transaction_form(coin_options, name_map)
-    display_transaction_history(transactions_df)
+    display_transaction_form(coin_options, name_map, currency)
+    display_transaction_history(transactions_df, currency)
     st.markdown("---")
-    display_database_management()
+    display_database_management(currency)
 
 
 # --- メイン処理 ---
@@ -442,23 +456,6 @@ def main():
     if not bq_client: st.stop()
     st.title("🪙 仮想通貨ポートフォリオ管理アプリ")
     
-    # ★★★ 変更点: すべてのテーブルを右揃えにするためのCSSをここに定義 ★★★
-    st.markdown("""
-        <style>
-            .right-align-table .stDataFrame [data-testid="stDataFrameData-row"] > div {
-                text-align: right !important;
-                justify-content: flex-end !important;
-            }
-            /* 最初の列だけは左揃えに戻す (銘柄名など) */
-            .right-align-table .stDataFrame [data-testid="stDataFrameData-row"] > div:first-child {
-                text-align: left !important;
-                justify-content: flex-start !important;
-            }
-        </style>
-    """, unsafe_allow_html=True)
-    
-    if 'confirm_delete' not in st.session_state: st.session_state.confirm_delete = False
-
     market_data = get_market_data()
     if market_data.empty:
         st.error("市場データを取得できませんでした。しばらくしてから再読み込みしてください。")
