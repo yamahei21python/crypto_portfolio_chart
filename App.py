@@ -245,10 +245,25 @@ def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Di
     tab_coin, tab_exchange, tab_detail = st.tabs(["コイン別", "取引所別", "詳細"])
     symbol = CURRENCY_SYMBOLS[currency]
 
+    # ★★★ 変更点: CSSセレクタを拡張し、1番目と3番目のタブにスタイルを適用 ★★★
     st.markdown("""<style>
-    [data-testid="stTabs"] [data-baseweb="tab-panel"]:nth-of-type(3) .stDataFrame [data-testid="stDataFrameData-row"] > div { text-align: right !important; justify-content: flex-end !important; }
-    [data-testid="stTabs"] [data-baseweb="tab-panel"]:nth-of-type(3) .stDataFrame [data-testid="stDataFrameData-row"] > div[data-col-id="0"],
-    [data-testid="stTabs"] [data-baseweb="tab-panel"]:nth-of-type(3) .stDataFrame [data-testid="stDataFrameData-row"] > div[data-col-id="1"] { text-align: left !important; justify-content: flex-start !important; }
+    /* 1番目(コイン別)と3番目(詳細)のタブのテーブル行を右揃えに */
+    [data-testid="stTabs"] [data-baseweb="tab-panel"]:nth-of-type(1) .stDataFrame [data-testid="stDataFrameData-row"] > div,
+    [data-testid="stTabs"] [data-baseweb="tab-panel"]:nth-of-type(3) .stDataFrame [data-testid="stDataFrameData-row"] > div {
+        text-align: right !important;
+        justify-content: flex-end !important;
+    }
+    /* 1番目と3番目のタブのテーブルの最初の列(コイン名)だけ左寄せに戻す */
+    [data-testid="stTabs"] [data-baseweb="tab-panel"]:nth-of-type(1) .stDataFrame [data-testid="stDataFrameData-row"] > div[data-col-id="0"],
+    [data-testid="stTabs"] [data-baseweb="tab-panel"]:nth-of-type(3) .stDataFrame [data-testid="stDataFrameData-row"] > div[data-col-id="0"] {
+        text-align: left !important;
+        justify-content: flex-start !important;
+    }
+    /* 3番目のタブ(詳細)の2番目の列(取引所)も左寄せに戻す */
+    [data-testid="stTabs"] [data-baseweb="tab-panel"]:nth-of-type(3) .stDataFrame [data-testid="stDataFrameData-row"] > div[data-col-id="1"] {
+        text-align: left !important;
+        justify-content: flex-start !important;
+    }
     </style>""", unsafe_allow_html=True)
 
     with tab_coin:
@@ -259,10 +274,14 @@ def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Di
         price_precision = 4 if currency == 'jpy' else 2
         coin_summary['評価額'] = coin_summary['評価額_display'].apply(lambda x: format_currency(x, symbol, 0))
         coin_summary['現在価格'] = (coin_summary['現在価格_jpy'] * rate).apply(lambda x: format_currency(x, symbol, price_precision))
+        
+        # 数値列をTextColumnとして扱うことで、カスタムCSSによる右寄せを確実にする
         st.dataframe(coin_summary[['コイン名', '保有数量', '評価額', '現在価格']],
-                     column_config={"保有数量": st.column_config.NumberColumn(format="%.8f"),
-                                    "評価額": st.column_config.TextColumn(f"評価額 ({currency.upper()})"),
-                                    "現在価格": st.column_config.TextColumn(f"現在価格 ({currency.upper()})")},
+                     column_config={
+                         "コイン名": st.column_config.TextColumn("コイン名"),
+                         "保有数量": st.column_config.TextColumn("保有数量"), # NumberColumnからTextColumnに変更
+                         "評価額": st.column_config.TextColumn(f"評価額 ({currency.upper()})"),
+                         "現在価格": st.column_config.TextColumn(f"現在価格 ({currency.upper()})")},
                      hide_index=True, use_container_width=True)
 
     with tab_exchange:
