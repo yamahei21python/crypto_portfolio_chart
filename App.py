@@ -146,21 +146,16 @@ with tab1:
             portfolio_df_display = portfolio_df.copy()
             portfolio_df_display['現在価格'] = portfolio_df_display['現在価格(JPY)'] * exchange_rate
             portfolio_df_display['評価額'] = portfolio_df_display['評価額(JPY)'] * exchange_rate
-
+            
             # ### エラー修正 ###
-            # column_configを条件分岐で設定
-            if selected_currency == 'jpy':
-                asset_list_config = {
-                    "保有数量": st.column_config.NumberColumn(format="%.8f"),
-                    "現在価格": st.column_config.NumberColumn("現在価格 (JPY)", format="¥,.2f"),
-                    "評価額": st.column_config.NumberColumn("評価額 (JPY)", format="¥,.0f"),
-                }
-            else: # usd
-                asset_list_config = {
-                    "保有数量": st.column_config.NumberColumn(format="%.8f"),
-                    "現在価格": st.column_config.NumberColumn("現在価格 (USD)", format="$,.2f"),
-                    "評価額": st.column_config.NumberColumn("評価額 (USD)", format="$,.0f"),
-                }
+            # formatから通貨記号を削除し、数値の書式のみ指定
+            asset_list_config = {
+                "コイン名": "コイン名",
+                "取引所": "取引所",
+                "保有数量": st.column_config.NumberColumn(format="%.8f"),
+                "現在価格": st.column_config.NumberColumn(f"現在価格 ({selected_currency.upper()})", format=",.2f"),
+                "評価額": st.column_config.NumberColumn(f"評価額 ({selected_currency.upper()})", format=",.0f"),
+            }
 
             edited_df = st.data_editor(
                 portfolio_df_display[['コイン名', '取引所', '保有数量', '現在価格', '評価額']],
@@ -204,11 +199,10 @@ with tab1:
     st.subheader("🗒️ 取引履歴")
     if not transactions_df.empty:
         # ### エラー修正 ###
-        # 取引履歴は常にJPY表示なので、静的なconfigでOK
         history_config = {
-            "取引日": st.column_config.DatetimeColumn("取引日", format="YYYY/MM/DD HH:mm"), 
+            "取引日": st.column_config.DatetimeColumn(format="YYYY/MM/DD HH:mm"), 
             "数量": st.column_config.NumberColumn(format="%.6f"), 
-            "価格(JPY)": st.column_config.NumberColumn(format="¥,.2f")
+            "価格(JPY)": st.column_config.NumberColumn(format=",.2f") # 通貨記号を削除
         }
         st.dataframe(
             transactions_df[['取引日', 'コイン名', '取引所', '売買種別', '数量', '価格(JPY)']],
@@ -224,10 +218,11 @@ with tab2:
     watchlist_df['現在価格'] = watchlist_df['price_jpy'] * exchange_rate
     
     # ### エラー修正 ###
-    if selected_currency == 'jpy':
-        watchlist_config = {"symbol": "シンボル", "name": "コイン名", "現在価格": st.column_config.NumberColumn("現在価格 (JPY)", format="¥,.2f")}
-    else: # usd
-        watchlist_config = {"symbol": "シンボル", "name": "コイン名", "現在価格": st.column_config.NumberColumn("現在価格 (USD)", format="$,.2f")}
+    watchlist_config = {
+        "symbol": "シンボル",
+        "name": "コイン名",
+        "現在価格": st.column_config.NumberColumn(f"現在価格 ({selected_currency.upper()})", format=",.2f") # 通貨記号を削除
+    }
 
     st.dataframe(
         watchlist_df[['symbol', 'name', '現在価格']], hide_index=True, use_container_width=True,
