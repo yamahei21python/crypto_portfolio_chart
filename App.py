@@ -183,21 +183,44 @@ def calculate_portfolio(transactions_df: pd.DataFrame, price_map: Dict, price_ch
 
 
 # --- UI描画関数 ---
+# ▼▼▼▼▼【変更箇所】▼▼▼▼▼
 def display_summary(total_asset_jpy: float, total_change_24h_jpy: float, currency: str, rate: float, symbol: str, price_map: Dict, price_change_map: Dict):
     """ポートフォリオのサマリーメトリクスを表示する"""
     st.header("📈 ポートフォリオサマリー")
     
-    # 通貨建ての計算
+    # --- 通貨建ての計算 ---
     display_total_asset = total_asset_jpy * rate
     display_total_change = total_change_24h_jpy * rate
     yesterday_asset_jpy = total_asset_jpy - total_change_24h_jpy
     change_pct = (total_change_24h_jpy / yesterday_asset_jpy * 100) if yesterday_asset_jpy > 0 else 0
     delta_display_str = f"{symbol}{display_total_change:,.2f} ({change_pct:+.2f}%)"
 
-    # BTC建ての計算
+    # --- BTC建ての計算 ---
+    total_asset_btc = 0
+    delta_btc_str = "N/A"
+
     btc_price_jpy = price_map.get('bitcoin', 0)
-    total_asset_btc = total_asset_jpy / btc_price_jpy if btc_price_jpy > 0 else 0
+    if btc_price_jpy > 0:
+        # 現在のBTC建て総資産
+        total_asset_btc = total_asset_jpy / btc_price_jpy
+        
+        # 24時間前のBTC価格を計算
+        btc_change_24h_jpy = price_change_map.get('bitcoin', 0)
+        btc_price_24h_ago_jpy = btc_price_jpy - btc_change_24h_jpy
+        
+        # 24時間前のBTC建て総資産を計算
+        if btc_price_24h_ago_jpy > 0 and yesterday_asset_jpy > 0:
+            total_asset_btc_24h_ago = yesterday_asset_jpy / btc_price_24h_ago_jpy
+            change_btc = total_asset_btc - total_asset_btc_24h_ago
+            
+            # 変動率を計算
+            if total_asset_btc_24h_ago > 0:
+                change_btc_pct = (change_btc / total_asset_btc_24h_ago) * 100
+                delta_btc_str = f"{change_btc:+.8f} BTC ({change_btc_pct:+.2f}%)"
+            else: # 24時間前が0で現在資産がある場合
+                delta_btc_str = f"{change_btc:+.8f} BTC"
     
+    # --- メトリクス表示 ---
     col1, col2 = st.columns(2)
     with col1:
         col1.metric(
@@ -206,8 +229,12 @@ def display_summary(total_asset_jpy: float, total_change_24h_jpy: float, currenc
             delta=delta_display_str
         )
     with col2:
-         # BTC建てのメトリックは複雑なため、シンプルに総資産額のみ表示
-        col2.metric(label="保有資産合計 (BTC)", value=f"{total_asset_btc:.8f} BTC")
+        col2.metric(
+            label="保有資産合計 (BTC)",
+            value=f"{total_asset_btc:.8f} BTC",
+            delta=delta_btc_str
+        )
+# ▲▲▲▲▲【変更箇所】▲▲▲▲▲
 
 def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str):
     """資産割合の円グラフを表示する"""
@@ -445,8 +472,14 @@ def main():
             transactions_df, price_map, price_change_map, name_map
         )
 
+        # ▼▼▼▼▼【変更箇所】▼▼▼▼▼
         # サマリー表示
-        display_summary(total_asset_jpy, total_change_24h_jpy, selected_currency, exchange_rate, currency_symbol, price_map, price_change_map)
+        display_summary(
+            total_asset_jpy, total_change_24h_jpy, 
+            selected_currency, exchange_rate, currency_symbol,
+            price_map, price_change_map # BTC計算用にマップを渡す
+        )
+        # ▲▲▲▲▲【変更箇所】▲▲▲▲▲
         st.markdown("---")
 
         # 資産構成と一覧
