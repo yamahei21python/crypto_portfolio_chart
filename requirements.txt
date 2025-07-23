@@ -2,3 +2,7 @@ streamlit
 pandas
 plotly
 pycoingecko
+numpy
+google-cloud-bigquery
+db-dtypes
+google-auth
