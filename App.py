@@ -33,9 +33,7 @@ BIGQUERY_SCHEMA = [
 CURRENCY_SYMBOLS = {'jpy': '¥', 'usd': '$'}
 TRANSACTION_TYPES_BUY = ['購入', '調整（増）']
 TRANSACTION_TYPES_SELL = ['売却', '調整（減）']
-# ▼▼▼【変更箇所】取引所のリストを定数として定義 ▼▼▼
 EXCHANGES_ORDERED = ['SBIVC', 'BITPOINT', 'Binance', 'bitbank', 'GMOコイン', 'Bybit']
-# ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
 
 # --- 初期設定 & クライアント初期化 ---
@@ -215,6 +213,7 @@ def display_summary(total_asset_jpy: float, currency: str, rate: float, symbol: 
     col1.metric(f"保有資産合計 ({currency.upper()})", f"{symbol}{display_total_asset:,.2f}", delta_display_str)
     col2.metric("保有資産合計 (BTC)", f"{total_asset_btc:.8f} BTC", delta_btc_str)
 
+# ▼▼▼【変更箇所】円グラフのソート順と開始位置を調整 ▼▼▼
 def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_asset_jpy: float, total_asset_btc: float):
     """資産割合の円グラフを表示し、中央に合計資産、各スライスに詳細情報を表示する"""
     st.subheader("📊 資産割合 (コイン別)")
@@ -225,6 +224,9 @@ def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_ass
     if pie_data.empty or pie_data["評価額(JPY)"].sum() <= 0:
         st.info("保有資産がありません。")
         return
+    
+    # 評価額の降順（多い順）でデータをソート
+    pie_data = pie_data.sort_values(by="評価額(JPY)", ascending=False)
         
     pie_data['評価額_display'] = pie_data['評価額(JPY)'] * rate
     fig = px.pie(pie_data, values='評価額_display', names='コイン名', hole=0.5, title="コイン別資産構成")
@@ -234,7 +236,10 @@ def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_ass
         textinfo='text',
         texttemplate=f"%{{label}} (%{{percent}})<br>{symbol}%{{value:,.0f}}",
         textfont_size=12,
-        marker=dict(line=dict(color='#FFFFFF', width=2))
+        marker=dict(line=dict(color='#FFFFFF', width=2)),
+        # スライスの配置を時計回り(clockwise)に、開始位置を真上(90度)に設定
+        direction='clockwise',
+        rotation=90
     )
     
     annotation_text = (
@@ -254,6 +259,7 @@ def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_ass
         )]
     )
     st.plotly_chart(fig, use_container_width=True)
+# ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
 def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Dict):
     """保有資産一覧をdata_editorで表示し、数量調整機能を提供する"""
@@ -339,13 +345,11 @@ def display_transaction_form(coin_options: Dict, name_map: Dict):
                 selected_coin_disp_name = st.selectbox("コイン種別", options=coin_options.keys())
             with c2:
                 transaction_type = st.selectbox("売買種別", ["購入", "売却"])
-                # ▼▼▼【変更箇所】取引所の入力をテキスト入力から選択式に変更 ▼▼▼
                 exchange = st.selectbox(
                     "取引所",
                     options=EXCHANGES_ORDERED,
-                    index=0
+                    index=2
                 )
-                # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
             with c3:
                 quantity = st.number_input("数量", min_value=0.0, format="%.8f")
                 price = st.number_input("価格(JPY)", min_value=0.0, format="%.2f")
