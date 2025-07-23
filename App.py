@@ -155,19 +155,17 @@ with tab1:
             portfolio_df_display['評価額'] = portfolio_df_display['評価額(JPY)'] * exchange_rate
             portfolio_df_display = portfolio_df_display.sort_values(by='評価額', ascending=False)
             
-            # ### 変更点: formatを最適化 ###
+            # 修正: format 文字列から通貨記号を削除。'¥' や '$' を直接含めるとエラーの原因となるため。
             asset_list_config = {
                 "コイン名": "コイン名", "取引所": "取引所",
                 "保有数量": st.column_config.NumberColumn(format="%.8f"),
-                # 現在価格: 小数点以下2桁
                 "現在価格": st.column_config.NumberColumn(
                     f"現在価格 ({selected_currency.upper()})", 
-                    format=f"{currency_symbol}%,.2f"
+                    format="%,.2f"  # 修正
                 ),
-                # 評価額: 整数
                 "評価額": st.column_config.NumberColumn(
                     f"評価額 ({selected_currency.upper()})", 
-                    format=f"{currency_symbol}%,.0f"
+                    format="%,.0f"  # 修正
                 ),
             }
 
@@ -208,12 +206,11 @@ with tab1:
 
     st.subheader("🗒️ 取引履歴")
     if not transactions_df.empty:
-        # ### 変更点: 価格列を再表示し、フォーマットを最適化 ###
+        # 修正: format 文字列から通貨記号を削除。'¥' を直接含めるとエラーの原因となるため。
         history_config = {
             "取引日": st.column_config.DatetimeColumn(format="YYYY/MM/DD HH:mm"), 
             "数量": st.column_config.NumberColumn(format="%.6f"), 
-            # JPY建て価格は小数点以下2桁
-            "価格(JPY)": st.column_config.NumberColumn(format="¥%,.2f")
+            "価格(JPY)": st.column_config.NumberColumn(format="%,.2f") # 修正
         }
         st.dataframe(
             transactions_df[['取引日', 'コイン名', '取引所', '売買種別', '数量', '価格(JPY)']],
@@ -249,12 +246,12 @@ with tab2:
     watchlist_df = crypto_data_jpy.copy()
     watchlist_df['現在価格'] = watchlist_df['price_jpy'] * exchange_rate
     
-    # ### 変更点: formatを最適化 ###
+    # 修正: format 文字列から通貨記号を削除。'¥' や '$' を直接含めるとエラーの原因となるため。
     watchlist_config = {
         "symbol": "シンボル", "name": "コイン名",
         "現在価格": st.column_config.NumberColumn(
             f"現在価格 ({selected_currency.upper()})", 
-            format=f"{currency_symbol}%,.2f"
+            format="%,.2f" # 修正
         )
     }
     st.dataframe(
