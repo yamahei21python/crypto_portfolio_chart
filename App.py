@@ -101,7 +101,8 @@ coin_options = {f"{row['name']} ({row['symbol'].upper()})": row['id'] for _, row
 price_map_jpy = crypto_data_jpy.set_index('id')['price_jpy'].to_dict()
 name_map = crypto_data_jpy.set_index('id')['name'].to_dict()
 
-st.title("🪙 仮想通貨ポートフォリオ管理 (BigQuery版)")
+# ★確認用★ タイトルを少し変更しました。これが反映されるかご確認ください。
+st.title("🪙 仮想通貨ポートフォリオ管理アプリ") 
 selected_currency = st.radio("表示通貨を選択", options=['jpy', 'usd'], format_func=lambda x: x.upper(), horizontal=True, key='currency')
 st.caption("※取引履歴の入力は常に日本円(JPY)で行ってください。保有資産一覧の数量は直接編集して調整できます。")
 exchange_rate = get_exchange_rate(selected_currency)
@@ -155,24 +156,27 @@ with tab1:
             portfolio_df_display['評価額'] = portfolio_df_display['評価額(JPY)'] * exchange_rate
             portfolio_df_display = portfolio_df_display.sort_values(by='評価額', ascending=False)
             
-            # 修正: format 文字列から通貨記号を削除。'¥' や '$' を直接含めるとエラーの原因となるため。
+            # ===【最重要修正箇所】===
+            # format引数に通貨記号(¥や$)を含めるとエラーになるため、削除しました。
+            # "%,.2f" は「カンマ区切り、小数点以下2桁」を意味します。
             asset_list_config = {
-                "コイン名": "コイン名", "取引所": "取引所",
+                "コイン名": "コイン名",
+                "取引所": "取引所",
                 "保有数量": st.column_config.NumberColumn(format="%.8f"),
                 "現在価格": st.column_config.NumberColumn(
                     f"現在価格 ({selected_currency.upper()})", 
-                    format="%,.2f"  # 修正
+                    format="%,.2f"
                 ),
                 "評価額": st.column_config.NumberColumn(
                     f"評価額 ({selected_currency.upper()})", 
-                    format="%,.0f"  # 修正
+                    format="%,.0f"
                 ),
             }
 
             edited_df = st.data_editor(portfolio_df_display[['コイン名', '取引所', '保有数量', '現在価格', '評価額']], disabled=['コイン名', '取引所', '現在価格', '評価額'], column_config=asset_list_config, use_container_width=True, key="portfolio_editor", hide_index=True)
             
             update_triggered = False
-            if not edited_df.equals(portfolio_df_display):
+            if not edited_df.equals(portfolio_df_display[['コイン名', '取引所', '保有数量', '現在価格', '評価額']]):
                 merged_df = pd.merge(portfolio_df_before_edit, edited_df, on=['コイン名', '取引所'], suffixes=('_before', '_after'))
                 for _, row in merged_df.iterrows():
                     if not np.isclose(row['保有数量_before'], row['保有数量_after']):
@@ -193,24 +197,30 @@ with tab1:
             st.subheader("新しい取引を登録")
             col1, col2, col3 = st.columns(3)
             with col1:
-                transaction_date, selected_coin_name = st.date_input("取引日", datetime.now()), st.selectbox("コイン種別", options=coin_options.keys())
+                transaction_date = st.date_input("取引日", datetime.now())
+                selected_coin_name = st.selectbox("コイン種別", options=coin_options.keys())
             with col2:
-                transaction_type, exchange = st.selectbox("売買種別", ["購入", "売却"]), st.text_input("取引所", "Binance")
+                transaction_type = st.selectbox("売買種別", ["購入", "売却"])
+                exchange = st.text_input("取引所", "Binance")
             with col3:
-                quantity, price, fee = st.number_input("数量", 0.0, format="%.8f"), st.number_input("価格(JPY)", 0.0, format="%.2f"), st.number_input("手数料(JPY)", 0.0, format="%.2f")
+                quantity = st.number_input("数量", 0.0, format="%.8f")
+                price = st.number_input("価格(JPY)", 0.0, format="%.2f")
+                fee = st.number_input("手数料(JPY)", 0.0, format="%.2f")
             if st.form_submit_button("登録する"):
-                coin_id, coin_name = coin_options[selected_coin_name], name_map.get(coin_options[selected_coin_name], selected_coin_name)
+                coin_id = coin_options[selected_coin_name]
+                coin_name = name_map.get(coin_id, selected_coin_name)
                 dt_transaction_date = datetime.combine(transaction_date, datetime.min.time())
                 add_transaction_to_bq(dt_transaction_date, coin_id, coin_name, exchange, transaction_type, quantity, price, fee, quantity * price)
-                st.success(f"{coin_name}の{transaction_type}取引を登録しました。"), st.rerun()
+                st.success(f"{coin_name}の{transaction_type}取引を登録しました。")
+                st.rerun()
 
     st.subheader("🗒️ 取引履歴")
     if not transactions_df.empty:
-        # 修正: format 文字列から通貨記号を削除。'¥' を直接含めるとエラーの原因となるため。
+        # ===【修正箇所】===
         history_config = {
             "取引日": st.column_config.DatetimeColumn(format="YYYY/MM/DD HH:mm"), 
             "数量": st.column_config.NumberColumn(format="%.6f"), 
-            "価格(JPY)": st.column_config.NumberColumn(format="%,.2f") # 修正
+            "価格(JPY)": st.column_config.NumberColumn(format="%,.2f")
         }
         st.dataframe(
             transactions_df[['取引日', 'コイン名', '取引所', '売買種別', '数量', '価格(JPY)']],
@@ -222,18 +232,16 @@ with tab1:
     st.subheader("⚙️ データベース管理")
     with st.expander("データベースリセット（危険）"):
         st.warning("**警告**: この操作はデータベース上のすべての取引履歴を完全に削除します。この操作は取り消せません。")
-        if st.session_state.confirm_delete:
+        if st.session_state.get('confirm_delete', False):
             st.error("本当によろしいですか？最終確認です。")
             col1, col2 = st.columns(2)
-            with col1:
-                if st.button("はい、すべてのデータを削除します", type="primary"):
-                    reset_bigquery_table()
-                    st.session_state.confirm_delete = False
-                    st.rerun()
-            with col2:
-                if st.button("いいえ、キャンセルします"):
-                    st.session_state.confirm_delete = False
-                    st.rerun()
+            if col1.button("はい、すべてのデータを削除します", type="primary"):
+                reset_bigquery_table()
+                st.session_state.confirm_delete = False
+                st.rerun()
+            if col2.button("いいえ、キャンセルします"):
+                st.session_state.confirm_delete = False
+                st.rerun()
         else:
             if st.button("すべての取引履歴をリセットする", type="primary"):
                 st.session_state.confirm_delete = True
@@ -246,12 +254,12 @@ with tab2:
     watchlist_df = crypto_data_jpy.copy()
     watchlist_df['現在価格'] = watchlist_df['price_jpy'] * exchange_rate
     
-    # 修正: format 文字列から通貨記号を削除。'¥' や '$' を直接含めるとエラーの原因となるため。
+    # ===【修正箇所】===
     watchlist_config = {
         "symbol": "シンボル", "name": "コイン名",
         "現在価格": st.column_config.NumberColumn(
             f"現在価格 ({selected_currency.upper()})", 
-            format="%,.2f" # 修正
+            format="%,.2f"
         )
     }
     st.dataframe(
