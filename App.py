@@ -147,11 +147,11 @@ with tab1:
             portfolio_df_display['現在価格'] = portfolio_df_display['現在価格(JPY)'] * exchange_rate
             portfolio_df_display['評価額'] = portfolio_df_display['評価額(JPY)'] * exchange_rate
 
-            # ### 最終修正 ###
-            # ユーザーの発見に基づき、正しいformat指定に修正
+            # ### 変更点 1: 評価額でソート ###
+            portfolio_df_display = portfolio_df_display.sort_values(by='評価額', ascending=False)
+
             asset_list_config = {
-                "コイン名": "コイン名",
-                "取引所": "取引所",
+                "コイン名": "コイン名", "取引所": "取引所",
                 "保有数量": st.column_config.NumberColumn(format="%.8f"),
                 "現在価格": st.column_config.NumberColumn(f"現在価格 ({selected_currency.upper()})", format=f"{currency_symbol}%,.2f"),
                 "評価額": st.column_config.NumberColumn(f"評価額 ({selected_currency.upper()})", format=f"{currency_symbol}%,.0f"),
@@ -161,21 +161,34 @@ with tab1:
                 portfolio_df_display[['コイン名', '取引所', '保有数量', '現在価格', '評価額']],
                 disabled=['コイン名', '取引所', '現在価格', '評価額'],
                 column_config=asset_list_config, 
-                use_container_width=True, key="portfolio_editor")
+                use_container_width=True, 
+                key="portfolio_editor",
+                hide_index=True  # ### 変更点 2: インデックスを非表示 ###
+            )
 
             update_triggered = False
-            for index, row in edited_df.iterrows():
-                original_row = portfolio_df_before_edit.loc[index]
-                original_quantity, edited_quantity = original_row['保有数量'], row['保有数量']
-                if not np.isclose(original_quantity, edited_quantity):
-                    quantity_diff = edited_quantity - original_quantity
-                    coin_name, exchange = original_row['コイン名'], original_row['取引所']
-                    coin_id = next((cid for cid, name in name_map.items() if name == coin_name), None)
-                    if coin_id:
-                        transaction_type = "調整（増）" if quantity_diff > 0 else "調整（減）"
-                        add_transaction_to_bq(datetime.now(timezone.utc), coin_id, coin_name, exchange, transaction_type, abs(quantity_diff), 0, 0, 0)
-                        st.toast(f"{coin_name} ({exchange}) の数量を調整: {quantity_diff:+.8f}", icon="✍️")
-                        update_triggered = True
+            # 編集後のデータはソートされているため、元のデータと比較するために工夫が必要
+            if not edited_df.equals(portfolio_df_display):
+                # 編集前と編集後のDataFrameをマージして差分を特定
+                # Coin, Exchangeをキーとしてマージ
+                merged_df = pd.merge(
+                    portfolio_df_before_edit,
+                    edited_df,
+                    on=['コイン名', '取引所'],
+                    suffixes=('_before', '_after')
+                )
+
+                for _, row in merged_df.iterrows():
+                    if not np.isclose(row['保有数量_before'], row['保有数量_after']):
+                        quantity_diff = row['保有数量_after'] - row['保有数量_before']
+                        coin_name, exchange = row['コイン名'], row['取引所']
+                        coin_id = next((cid for cid, name in name_map.items() if name == coin_name), None)
+                        if coin_id:
+                            transaction_type = "調整（増）" if quantity_diff > 0 else "調整（減）"
+                            add_transaction_to_bq(datetime.now(timezone.utc), coin_id, coin_name, exchange, transaction_type, abs(quantity_diff), 0, 0, 0)
+                            st.toast(f"{coin_name} ({exchange}) の数量を調整: {quantity_diff:+.8f}", icon="✍️")
+                            update_triggered = True
+            
             if update_triggered: st.rerun()
         else: st.info("保有資産はありません。")
 
@@ -198,7 +211,6 @@ with tab1:
 
     st.subheader("🗒️ 取引履歴")
     if not transactions_df.empty:
-        # ### 最終修正 ###
         history_config = {
             "取引日": st.column_config.DatetimeColumn(format="YYYY/MM/DD HH:mm"), 
             "数量": st.column_config.NumberColumn(format="%.6f"), 
@@ -217,13 +229,11 @@ with tab2:
     watchlist_df = crypto_data_jpy.copy()
     watchlist_df['現在価格'] = watchlist_df['price_jpy'] * exchange_rate
     
-    # ### 最終修正 ###
     watchlist_config = {
-        "symbol": "シンボル",
-        "name": "コイン名",
+        "symbol": "シンボル", "name": "コイン名",
         "現在価格": st.column_config.NumberColumn(f"現在価格 ({selected_currency.upper()})", format=f"{currency_symbol}%,.2f")
     }
 
     st.dataframe(
-        watchlist_df[['symbol', 'name', '現在価格']], hide_index=True, use_container_width=True,
+        watchlist_df.sort_values(by='現在価格', ascending=False)[['symbol', 'name', '現在価格']], hide_index=True, use_container_width=True,
         column_config=watchlist_config)
