@@ -341,7 +341,7 @@ def display_transaction_history(transactions_df: pd.DataFrame):
         cols[0].text(row['取引日'].strftime('%Y/%m/%d %H:%M:%S'))
         cols[1].text(row['コイン名']); cols[2].text(row['取引所'])
         cols[3].text(row['売買種別']); cols[4].text(f"{row['数量']:.8f}")
-        if cols[5].button("削除", key=f"delete_{index}"):
+        if cols[5].button("削除", key=f"delete_{index}_{row['取引日']}"):
             if delete_transaction_from_bq(row):
                 st.toast(f"取引を削除しました: {row['取引日'].strftime('%Y/%m/%d')}の{row['コイン名']}取引", icon="🗑️")
                 st.rerun()
@@ -361,7 +361,7 @@ def display_database_management():
                 st.session_state.confirm_delete = False
                 st.rerun()
         else:
-            if st.button("すべての取引履歴をリセットする"):
+            if st.button("すべての取引履歴をリセットする", key="reset_button"):
                 st.session_state.confirm_delete = True
                 st.rerun()
 
@@ -375,102 +375,88 @@ def render_watchlist_tab(market_data: pd.DataFrame, currency: str, rate: float):
         return
         
     watchlist_df = market_data.copy()
-    
     price_precision = 4 if currency == 'jpy' else 2
     watchlist_df['現在価格_formatted'] = (watchlist_df['price_jpy'] * rate).apply(lambda x: format_currency(x, symbol, price_precision))
     watchlist_df['時価総額_formatted'] = (watchlist_df['market_cap'] * rate).apply(lambda x: format_currency(x, symbol, 0))
-    
     watchlist_df.rename(columns={'name': '銘柄', '現在価格_formatted': '現在価格', '時価総額_formatted': '時価総額',
                                  'price_change_percentage_24h': '24h変動率'}, inplace=True)
-    
     column_config = {
         "銘柄": st.column_config.TextColumn("銘柄"),
         "現在価格": st.column_config.TextColumn(f"現在価格 ({currency.upper()})"),
         "時価総額": st.column_config.TextColumn(f"時価総額 ({currency.upper()})"),
-        "24h変動率": st.column_config.NumberColumn("24h変動率 (%)", format="%.2f%%")
-    }
-    
+        "24h変動率": st.column_config.NumberColumn("24h変動率 (%)", format="%.2f%%")}
     st.dataframe(
         watchlist_df.sort_values(by='market_cap', ascending=False)[['銘柄', '現在価格', '時価総額', '24h変動率']],
-        hide_index=True, use_container_width=True, column_config=column_config
-    )
+        hide_index=True, use_container_width=True, column_config=column_config)
+
+# ★★★ 新設: ポートフォリオページの描画をまとめた関数 ★★★
+def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFrame, currency: str):
+    """指定された通貨でポートフォリオページ全体を描画する"""
+    rate = get_exchange_rate(currency)
+    symbol = CURRENCY_SYMBOLS[currency]
+    
+    price_map = market_data.set_index('id')['price_jpy'].to_dict()
+    price_change_map = market_data.set_index('id')['price_change_24h_jpy'].to_dict()
+    name_map = market_data.set_index('id')['name'].to_dict()
+    coin_options = {f"{row['name']} ({row['symbol'].upper()})": row['id'] for _, row in market_data.iterrows()}
+
+    portfolio, total_asset_jpy, total_change_24h_jpy = calculate_portfolio(transactions_df, price_map, price_change_map, name_map)
+    total_asset_btc = calculate_btc_value(total_asset_jpy, price_map)
+    delta_display_str, jpy_delta_color, delta_btc_str, btc_delta_color = calculate_deltas(
+        total_asset_jpy, total_change_24h_jpy, rate, symbol, price_map, price_change_map)
+
+    c1, c2 = st.columns([1, 1.2])
+    with c1:
+        display_asset_pie_chart(portfolio, rate, symbol, total_asset_jpy, total_asset_btc)
+        st.markdown(f"""
+        <div style="text-align: center; margin-top: 5px; line-height: 1.4;">
+            <span style="font-size: 1.0rem; color: {jpy_delta_color};">{delta_display_str}</span>
+            <span style="font-size: 1.0rem; color: {btc_delta_color}; margin-left: 12px;">{delta_btc_str}</span>
+        </div>
+        """, unsafe_allow_html=True)
+    with c2:
+        display_asset_list(portfolio, currency, rate, name_map)
+    
+    st.markdown("---")
+    display_transaction_form(coin_options, name_map)
+    display_transaction_history(transactions_df)
+    st.markdown("---")
+    display_database_management()
+
 
 # --- メイン処理 ---
 def main():
     if not bq_client: st.stop()
     st.title("🪙 仮想通貨ポートフォリオ管理アプリ")
     
-    if 'currency' not in st.session_state: st.session_state.currency = 'jpy'
     if 'confirm_delete' not in st.session_state: st.session_state.confirm_delete = False
 
-    selected_currency = st.radio("表示通貨を選択", ['jpy', 'usd'], format_func=lambda x: x.upper(), horizontal=True, key='currency')
-    
     market_data = get_market_data()
     if market_data.empty:
         st.error("市場データを取得できませんでした。しばらくしてから再読み込みしてください。")
         st.stop()
 
-    exchange_rate = get_exchange_rate(selected_currency)
-    currency_symbol = CURRENCY_SYMBOLS[selected_currency]
-    price_map = market_data.set_index('id')['price_jpy'].to_dict()
-    price_change_map = market_data.set_index('id')['price_change_24h_jpy'].to_dict()
-    name_map = market_data.set_index('id')['name'].to_dict()
-    coin_options = {f"{row['name']} ({row['symbol'].upper()})": row['id'] for _, row in market_data.iterrows()}
-
     init_bigquery_table()
     transactions_df = get_transactions_from_bq()
 
-    # ★★★ 変更点: st.tabsをst.radioに置き換えて状態を維持 ★★★
-    st.markdown("""
-        <style>
-            /* ラジオボタンをタブのように見せるためのCSS */
-            div[role="radiogroup"] > label {
-                padding: 5px 15px;
-                margin: 0;
-                border-bottom: 2px solid transparent;
-                display: inline-block;
-            }
-            div[role="radiogroup"] > label > div:first-of-type {
-                display: none; /* ラジオボタンの丸を非表示 */
-            }
-            div[role="radiogroup"] > label[data-baseweb="radio"] > div:last-of-type {
-                font-size: 1.1rem;
-            }
-            input[type="radio"]:checked + div {
-                font-weight: bold;
-            }
-            div[role="radiogroup"] > label:has(input[type="radio"]:checked) {
-                border-bottom-color: #FF4B4B; /* Streamlitのテーマカラー */
-            }
-        </style>
-    """, unsafe_allow_html=True)
-    
-    active_tab = st.radio(" ", ["ポートフォリオ", "ウォッチリスト"], horizontal=True, label_visibility="collapsed")
+    # ★★★ 変更点: ラジオボタンを削除し、4つのタブを生成 ★★★
+    tab_pf_jpy, tab_wl_jpy, tab_pf_usd, tab_wl_usd = st.tabs([
+        "ポートフォリオ (JPY)", "ウォッチリスト (JPY)", 
+        "ポートフォリオ (USD)", "ウォッチリスト (USD)"
+    ])
 
-    if active_tab == "ポートフォリオ":
-        portfolio, total_asset_jpy, total_change_24h_jpy = calculate_portfolio(transactions_df, price_map, price_change_map, name_map)
-        total_asset_btc = calculate_btc_value(total_asset_jpy, price_map)
-        delta_display_str, jpy_delta_color, delta_btc_str, btc_delta_color = calculate_deltas(
-            total_asset_jpy, total_change_24h_jpy, exchange_rate, currency_symbol, price_map, price_change_map)
-        c1, c2 = st.columns([1, 1.2])
-        with c1:
-            display_asset_pie_chart(portfolio, exchange_rate, currency_symbol, total_asset_jpy, total_asset_btc)
-            st.markdown(f"""
-            <div style="text-align: center; margin-top: 5px; line-height: 1.4;">
-                <span style="font-size: 1.0rem; color: {jpy_delta_color};">{delta_display_str}</span>
-                <span style="font-size: 1.0rem; color: {btc_delta_color}; margin-left: 12px;">{delta_btc_str}</span>
-            </div>
-            """, unsafe_allow_html=True)
-        with c2:
-            display_asset_list(portfolio, selected_currency, exchange_rate, name_map)
-        st.markdown("---")
-        display_transaction_form(coin_options, name_map)
-        display_transaction_history(transactions_df)
-        st.markdown("---")
-        display_database_management()
+    with tab_pf_jpy:
+        render_portfolio_page(transactions_df, market_data, currency='jpy')
 
-    elif active_tab == "ウォッチリスト":
-        render_watchlist_tab(market_data, selected_currency, exchange_rate)
+    with tab_wl_jpy:
+        render_watchlist_tab(market_data, currency='jpy', rate=1.0)
+            
+    with tab_pf_usd:
+        render_portfolio_page(transactions_df, market_data, currency='usd')
+            
+    with tab_wl_usd:
+        usd_rate = get_exchange_rate('usd')
+        render_watchlist_tab(market_data, currency='usd', rate=usd_rate)
 
 if __name__ == "__main__":
     main()
