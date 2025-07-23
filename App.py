@@ -243,7 +243,7 @@ def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_ass
     # texttemplate内でHTMLのspanタグとCSSのline-heightスタイルを使い、テキストの行間を広げます。
     # line-heightの値を1.6に設定していますが、この数値を変更することでお好みの間隔に調整可能です。
     text_template = (
-        "<span style='line-height: 1.6;'>"
+        "<span style='line-height: 2.0;'>"
         "%{label} (%{percent})<br>"
         f"{symbol}%{{value:,.0f}}"
         "</span>"
