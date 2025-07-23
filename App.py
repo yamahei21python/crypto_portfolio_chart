@@ -153,8 +153,8 @@ with tab1:
                 "コイン名": "コイン名",
                 "取引所": "取引所",
                 "保有数量": st.column_config.NumberColumn(format="%.8f"),
-                "現在価格": st.column_config.NumberColumn(f"現在価格 ({selected_currency.upper()})", format=",.2f"),
-                "評価額": st.column_config.NumberColumn(f"評価額 ({selected_currency.upper()})", format=",.0f"),
+                "現在価格": st.column_config.NumberColumn(f"現在価格 ({selected_currency.upper()})", format=f"{currency_symbol}%,.2f"),
+                "評価額": st.column_config.NumberColumn(f"評価額 ({selected_currency.upper()})", format=f"{currency_symbol}%,.0f"),
             }
 
             edited_df = st.data_editor(
