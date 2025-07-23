@@ -108,11 +108,9 @@ def add_transaction_to_bq(transaction_data: Dict[str, Any]) -> bool:
     """取引データをBigQueryテーブルに追加する。"""
     if not bq_client: return False
     
-    # タイムゾーン情報がない場合はUTCとして扱う
     if isinstance(transaction_data["transaction_date"], datetime) and transaction_data["transaction_date"].tzinfo is None:
         transaction_data["transaction_date"] = transaction_data["transaction_date"].replace(tzinfo=timezone.utc)
     
-    # BigQueryはISOフォーマットの文字列を要求する
     transaction_data["transaction_date"] = transaction_data["transaction_date"].isoformat()
     
     errors = bq_client.insert_rows_json(TABLE_FULL_ID, [transaction_data])
@@ -164,7 +162,6 @@ def get_transactions_from_bq() -> pd.DataFrame:
 
     df['transaction_date'] = pd.to_datetime(df['transaction_date']).dt.tz_convert('Asia/Tokyo')
     
-    # 表示用にカラム名を日本語に変換
     rename_map = {
         'transaction_date': '取引日', 'coin_name': 'コイン名', 'exchange': '取引所',
         'transaction_type': '売買種別', 'quantity': '数量', 'price_jpy': '価格(JPY)',
@@ -234,7 +231,7 @@ def calculate_portfolio(
         sell_quantity = group[group['売買種別'].isin(TRANSACTION_TYPES_SELL)]['数量'].sum()
         current_quantity = buy_quantity - sell_quantity
 
-        if current_quantity > 1e-9:  # 浮動小数点誤差を考慮
+        if current_quantity > 1e-9:
             current_price_jpy = price_map.get(coin_id, 0)
             current_value_jpy = current_quantity * current_price_jpy
             change_24h_per_coin = price_change_map.get(coin_id, 0)
@@ -263,14 +260,12 @@ def calculate_deltas(
     symbol: str, price_map: Dict, price_change_map: Dict
 ) -> Deltas:
     """総資産の24時間変動（対法定通貨、対BTC）を計算し、表示用文字列と色を返す。"""
-    # 法定通貨建ての変動
     display_total_change = total_change_24h_jpy * rate
     yesterday_asset_jpy = total_asset_jpy - total_change_24h_jpy
     change_pct = (total_change_24h_jpy / yesterday_asset_jpy * 100) if yesterday_asset_jpy > 0 else 0
     delta_display_str = f"{symbol}{display_total_change:,.2f} ({change_pct:+.2f}%)"
     jpy_delta_color = "green" if total_change_24h_jpy >= 0 else "red"
 
-    # BTC建ての変動
     delta_btc_str, btc_delta_color = "N/A", "grey"
     btc_price_jpy = price_map.get('bitcoin', 0)
     if btc_price_jpy > 0:
@@ -294,13 +289,19 @@ def calculate_deltas(
 
 # --- UI描画関数 (UI Rendering Functions) ---
 
-# テーブルの右寄せ表示用CSS
 RIGHT_ALIGN_STYLE = """
 <style>
-    /* 全てのデータセルを右寄せ */
     .right-align-table .stDataFrame [data-testid="stDataFrameData-row"] > div {
         text-align: right !important;
         justify-content: flex-end !important;
+    }
+    .right-align-table .stDataFrame [data-testid="stDataFrameData-row"] > div:first-child {
+        text-align: left !important;
+        justify-content: flex-start !important;
+    }
+    .right-align-table .stDataFrame [data-testid="stDataFrameData-row"] > div[data-col-id="1"]:not(:first-child) {
+        text-align: left !important;
+        justify-content: flex-start !important;
     }
 </style>
 """
@@ -373,6 +374,8 @@ def display_asset_list(portfolio: Dict, currency: str, rate: float):
     with tab_detail:
         _render_detailed_portfolio(portfolio_df, currency, rate)
 
+# ★★★★★ ここからが変更箇所 ★★★★★
+
 def _render_summary_by_coin(df: pd.DataFrame, currency: str, rate: float):
     """資産一覧（コイン別）タブをレンダリングする。"""
     summary_df = df.groupby("コイン名").agg(
@@ -381,19 +384,33 @@ def _render_summary_by_coin(df: pd.DataFrame, currency: str, rate: float):
         現在価格_jpy=('現在価格(JPY)', 'first')
     ).sort_values(by='評価額_display', ascending=False).reset_index()
 
+    # ★追加★ 割合計算のために総資産額を取得
+    total_assets_display = summary_df['評価額_display'].sum()
+
     symbol = CURRENCY_SYMBOLS[currency]
     price_precision = 4 if currency == 'jpy' else 2
     
     summary_df['評価額'] = summary_df['評価額_display'].apply(lambda x: format_currency(x, symbol, 0))
+    
+    # ★追加★ 割合(%)を計算し、新しい列を追加
+    if total_assets_display > 0:
+        summary_df['割合'] = (summary_df['評価額_display'] / total_assets_display) * 100
+    else:
+        summary_df['割合'] = 0
+
     summary_df['現在価格'] = (summary_df['現在価格_jpy'] * rate).apply(lambda x: format_currency(x, symbol, price_precision))
     summary_df['保有数量'] = summary_df['保有数量'].apply(lambda x: f"{x:,.8f}".rstrip('0').rstrip('.'))
     
     st.markdown('<div class="right-align-table">', unsafe_allow_html=True)
     st.dataframe(
-        summary_df[['コイン名', '保有数量', '評価額', '現在価格']],
+        # ★変更★ 表示列に「割合」を追加
+        summary_df[['コイン名', '保有数量', '評価額', '割合', '現在価格']],
         column_config={
             "コイン名": "コイン名", "保有数量": "保有数量",
-            "評価額": f"評価額 ({currency.upper()})", "現在価格": f"現在価格 ({currency.upper()})"
+            "評価額": f"評価額 ({currency.upper()})",
+            # ★追加★ 「割合」列のフォーマットを設定
+            "割合": st.column_config.NumberColumn("割合", format="%.2f%%"),
+            "現在価格": f"現在価格 ({currency.upper()})"
         },
         hide_index=True, use_container_width=True
     )
@@ -402,16 +419,34 @@ def _render_summary_by_coin(df: pd.DataFrame, currency: str, rate: float):
 def _render_summary_by_exchange(df: pd.DataFrame, currency: str):
     """資産一覧（取引所別）タブをレンダリングする。"""
     summary_df = df.groupby("取引所")['評価額_display'].sum().sort_values(ascending=False).reset_index()
+    
+    # ★追加★ 割合計算のために総資産額を取得
+    total_assets_display = summary_df['評価額_display'].sum()
+
     symbol = CURRENCY_SYMBOLS[currency]
     summary_df['評価額'] = summary_df['評価額_display'].apply(lambda x: format_currency(x, symbol, 0))
     
+    # ★追加★ 割合(%)を計算し、新しい列を追加
+    if total_assets_display > 0:
+        summary_df['割合'] = (summary_df['評価額_display'] / total_assets_display) * 100
+    else:
+        summary_df['割合'] = 0
+
     st.markdown('<div class="right-align-table">', unsafe_allow_html=True)
     st.dataframe(
-        summary_df[['取引所', '評価額']],
-        column_config={"取引所": "取引所", "評価額": f"評価額 ({currency.upper()})"},
+        # ★変更★ 表示列に「割合」を追加
+        summary_df[['取引所', '評価額', '割合']],
+        column_config={
+            "取引所": "取引所", 
+            "評価額": f"評価額 ({currency.upper()})",
+            # ★追加★ 「割合」列のフォーマットを設定
+            "割合": st.column_config.NumberColumn("割合", format="%.2f%%"),
+        },
         hide_index=True, use_container_width=True
     )
     st.markdown('</div>', unsafe_allow_html=True)
+
+# ★★★★★ ここまでが変更箇所 ★★★★★
 
 def _render_detailed_portfolio(df: pd.DataFrame, currency: str, rate: float):
     """資産一覧（詳細）タブをレンダリングし、数量の直接編集機能を提供する。"""
@@ -423,7 +458,6 @@ def _render_detailed_portfolio(df: pd.DataFrame, currency: str, rate: float):
     display_df['評価額_formatted'] = display_df['評価額_display'].apply(lambda x: format_currency(x, symbol, 0))
     display_df['現在価格_formatted'] = display_df['現在価格_display'].apply(lambda x: format_currency(x, symbol, price_precision))
 
-    # 編集前の状態をセッションに保存
     session_key = f'before_edit_df_{currency}'
     if session_key not in st.session_state or not st.session_state[session_key].equals(display_df):
         st.session_state[session_key] = display_df.copy()
@@ -444,7 +478,6 @@ def _render_detailed_portfolio(df: pd.DataFrame, currency: str, rate: float):
     )
     st.markdown('</div>', unsafe_allow_html=True)
     
-    # 変更があったか確認
     if not edited_df['保有数量'].equals(st.session_state[session_key]['保有数量']):
         merged_df = pd.merge(st.session_state[session_key], edited_df, on=['コイン名', '取引所'], suffixes=('_before', '_after'))
         for _, row in merged_df.iterrows():
@@ -506,13 +539,11 @@ def display_transaction_history(transactions_df: pd.DataFrame, currency: str):
         st.info("まだ取引履歴がありません。")
         return
         
-    # ヘッダー
     cols = st.columns([3, 2, 2, 2, 2, 1])
     headers = ["取引日時", "コイン名", "取引所", "売買種別", "数量", "操作"]
     for col, header in zip(cols, headers):
         col.markdown(f"**{header}**")
     
-    # 履歴データ
     for _, row in transactions_df.iterrows():
         unique_key = f"delete_{currency}_{row['取引日'].timestamp()}_{row['コインID']}_{row['数量']}"
         cols = st.columns([3, 2, 2, 2, 2, 1])
@@ -601,7 +632,7 @@ def render_watchlist_tab(market_data: pd.DataFrame, currency: str, rate: float):
     watchlist_df.rename(columns={'name': '銘柄', 'price_change_percentage_24h': '24h変動率'}, inplace=True)
 
     df_to_display = watchlist_df.sort_values(by='market_cap', ascending=False)[['銘柄', '現在価格', '時価総額', '24h変動率']]
-    height = (len(df_to_display) + 1) * 35 + 3 # DataFrameの高さを行数に応じて動的に設定
+    height = (len(df_to_display) + 1) * 35 + 3
     
     st.markdown('<div class="right-align-table">', unsafe_allow_html=True)
     st.dataframe(
@@ -628,7 +659,6 @@ def main():
 
     st.title("🪙 仮想通貨ポートフォリオ管理アプリ")
     
-    # 最初に必要なデータを取得
     market_data = get_market_data()
     if market_data.empty:
         st.error("市場データを取得できませんでした。しばらくしてから再読み込みしてください。")
@@ -637,16 +667,13 @@ def main():
     init_bigquery_table()
     transactions_df = get_transactions_from_bq()
     
-    # 為替レートは一度だけ取得
     usd_rate = get_exchange_rate('usd')
 
-    # タブを定義
     tab_pf_jpy, tab_wl_jpy, tab_pf_usd, tab_wl_usd = st.tabs([
         "ポートフォリオ (JPY)", "ウォッチリスト (JPY)", 
         "ポートフォリオ (USD)", "ウォッチリスト (USD)"
     ])
 
-    # 各タブの内容を描画
     with tab_pf_jpy:
         render_portfolio_page(transactions_df, market_data, currency='jpy', rate=1.0)
     with tab_wl_jpy:
