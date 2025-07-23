@@ -468,7 +468,7 @@ def main():
             st.markdown(f"""
             <div style="text-align: center; margin-top: 5px; line-height: 1.4;">
 
-                <span style="font-size: 1.0rem; color: {jpy_delta_color}; margin-left: 8px;">{delta_display_str}</span>
+                <span style="font-size: 1.0rem; font-weight: 500; color: {jpy_delta_color}; margin-left: 8px;">{delta_display_str}</span>
             </div>
             """, unsafe_allow_html=True)
             # --- 変更箇所 END ---
