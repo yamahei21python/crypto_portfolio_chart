@@ -161,7 +161,6 @@ def get_exchange_rate(target_currency: str) -> float:
 
 
 # --- データ処理 & フォーマット関数 ---
-# ★★★ 変更点: format_jpyを汎用的なformat_currencyに変更 ★★★
 def format_currency(value: float, symbol: str, precision: int = 0) -> str:
     """数値を通貨記号付きのカンマ区切り文字列にフォーマットする"""
     return f"{symbol}{value:,.{precision}f}"
@@ -257,8 +256,9 @@ def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Di
             保有数量=('保有数量', 'sum'), 評価額_display=('評価額_display', 'sum'),
             現在価格_jpy=('現在価格(JPY)', 'first')
         ).sort_values(by='評価額_display', ascending=False).reset_index()
+        price_precision = 4 if currency == 'jpy' else 2
         coin_summary['評価額'] = coin_summary['評価額_display'].apply(lambda x: format_currency(x, symbol, 0))
-        coin_summary['現在価格'] = (coin_summary['現在価格_jpy'] * rate).apply(lambda x: format_currency(x, symbol, 2))
+        coin_summary['現在価格'] = (coin_summary['現在価格_jpy'] * rate).apply(lambda x: format_currency(x, symbol, price_precision))
         st.dataframe(coin_summary[['コイン名', '保有数量', '評価額', '現在価格']],
                      column_config={"保有数量": st.column_config.NumberColumn(format="%.8f"),
                                     "評価額": st.column_config.TextColumn(f"評価額 ({currency.upper()})"),
@@ -275,8 +275,9 @@ def display_asset_list(portfolio: Dict, currency: str, rate: float, name_map: Di
     with tab_detail:
         df_display = portfolio_df.copy().sort_values(by='評価額_display', ascending=False)
         df_display['現在価格_display'] = df_display['現在価格(JPY)'] * rate
+        price_precision = 4 if currency == 'jpy' else 2
         df_display['評価額'] = df_display['評価額_display'].apply(lambda x: format_currency(x, symbol, 0))
-        df_display['現在価格'] = df_display['現在価格_display'].apply(lambda x: format_currency(x, symbol, 2))
+        df_display['現在価格'] = df_display['現在価格_display'].apply(lambda x: format_currency(x, symbol, price_precision))
         
         if 'before_edit_df' not in st.session_state or not st.session_state.before_edit_df.equals(df_display):
              st.session_state.before_edit_df = df_display.copy()
@@ -364,7 +365,6 @@ def display_database_management():
                 st.session_state.confirm_delete = True
                 st.rerun()
 
-# ★★★ 変更点: NumberColumnをやめ、ヘルパー関数で整形した文字列を表示 ★★★
 def render_watchlist_tab(market_data: pd.DataFrame, currency: str, rate: float):
     symbol = CURRENCY_SYMBOLS[currency]
     st.header("⭐ ウォッチリスト")
@@ -376,21 +376,13 @@ def render_watchlist_tab(market_data: pd.DataFrame, currency: str, rate: float):
         
     watchlist_df = market_data.copy()
     
-    # 表示用の整形済み文字列の列を作成
-    # JPYの場合は小数点以下4桁、USDの場合は2桁にするなど、通貨に応じた調整
     price_precision = 4 if currency == 'jpy' else 2
     watchlist_df['現在価格_formatted'] = (watchlist_df['price_jpy'] * rate).apply(lambda x: format_currency(x, symbol, price_precision))
     watchlist_df['時価総額_formatted'] = (watchlist_df['market_cap'] * rate).apply(lambda x: format_currency(x, symbol, 0))
     
-    # 表示用に列名を変更
-    watchlist_df.rename(columns={
-        'name': '銘柄',
-        '現在価格_formatted': '現在価格',
-        '時価総額_formatted': '時価総額',
-        'price_change_percentage_24h': '24h変動率'
-    }, inplace=True)
+    watchlist_df.rename(columns={'name': '銘柄', '現在価格_formatted': '現在価格', '時価総額_formatted': '時価総額',
+                                 'price_change_percentage_24h': '24h変動率'}, inplace=True)
     
-    # 表示する列の設定
     column_config = {
         "銘柄": st.column_config.TextColumn("銘柄"),
         "現在価格": st.column_config.TextColumn(f"現在価格 ({currency.upper()})"),
@@ -400,38 +392,62 @@ def render_watchlist_tab(market_data: pd.DataFrame, currency: str, rate: float):
     
     st.dataframe(
         watchlist_df.sort_values(by='market_cap', ascending=False)[['銘柄', '現在価格', '時価総額', '24h変動率']],
-        hide_index=True,
-        use_container_width=True,
-        column_config=column_config
+        hide_index=True, use_container_width=True, column_config=column_config
     )
 
 # --- メイン処理 ---
 def main():
     if not bq_client: st.stop()
     st.title("🪙 仮想通貨ポートフォリオ管理アプリ")
+    
     if 'currency' not in st.session_state: st.session_state.currency = 'jpy'
     if 'confirm_delete' not in st.session_state: st.session_state.confirm_delete = False
 
+    selected_currency = st.radio("表示通貨を選択", ['jpy', 'usd'], format_func=lambda x: x.upper(), horizontal=True, key='currency')
+    
     market_data = get_market_data()
     if market_data.empty:
         st.error("市場データを取得できませんでした。しばらくしてから再読み込みしてください。")
         st.stop()
 
+    exchange_rate = get_exchange_rate(selected_currency)
+    currency_symbol = CURRENCY_SYMBOLS[selected_currency]
     price_map = market_data.set_index('id')['price_jpy'].to_dict()
     price_change_map = market_data.set_index('id')['price_change_24h_jpy'].to_dict()
     name_map = market_data.set_index('id')['name'].to_dict()
     coin_options = {f"{row['name']} ({row['symbol'].upper()})": row['id'] for _, row in market_data.iterrows()}
 
-    selected_currency = st.radio("表示通貨を選択", ['jpy', 'usd'], format_func=lambda x: x.upper(), horizontal=True, key='currency')
-    exchange_rate = get_exchange_rate(selected_currency)
-    currency_symbol = CURRENCY_SYMBOLS[selected_currency]
-
     init_bigquery_table()
     transactions_df = get_transactions_from_bq()
 
-    tab_portfolio, tab_watchlist = st.tabs(["ポートフォリオ", "ウォッチリスト"])
+    # ★★★ 変更点: st.tabsをst.radioに置き換えて状態を維持 ★★★
+    st.markdown("""
+        <style>
+            /* ラジオボタンをタブのように見せるためのCSS */
+            div[role="radiogroup"] > label {
+                padding: 5px 15px;
+                margin: 0;
+                border-bottom: 2px solid transparent;
+                display: inline-block;
+            }
+            div[role="radiogroup"] > label > div:first-of-type {
+                display: none; /* ラジオボタンの丸を非表示 */
+            }
+            div[role="radiogroup"] > label[data-baseweb="radio"] > div:last-of-type {
+                font-size: 1.1rem;
+            }
+            input[type="radio"]:checked + div {
+                font-weight: bold;
+            }
+            div[role="radiogroup"] > label:has(input[type="radio"]:checked) {
+                border-bottom-color: #FF4B4B; /* Streamlitのテーマカラー */
+            }
+        </style>
+    """, unsafe_allow_html=True)
+    
+    active_tab = st.radio(" ", ["ポートフォリオ", "ウォッチリスト"], horizontal=True, label_visibility="collapsed")
 
-    with tab_portfolio:
+    if active_tab == "ポートフォリオ":
         portfolio, total_asset_jpy, total_change_24h_jpy = calculate_portfolio(transactions_df, price_map, price_change_map, name_map)
         total_asset_btc = calculate_btc_value(total_asset_jpy, price_map)
         delta_display_str, jpy_delta_color, delta_btc_str, btc_delta_color = calculate_deltas(
@@ -453,7 +469,7 @@ def main():
         st.markdown("---")
         display_database_management()
 
-    with tab_watchlist:
+    elif active_tab == "ウォッチリスト":
         render_watchlist_tab(market_data, selected_currency, exchange_rate)
 
 if __name__ == "__main__":
