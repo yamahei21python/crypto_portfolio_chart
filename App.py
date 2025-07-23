@@ -29,6 +29,20 @@ BIGQUERY_SCHEMA = [
     bigquery.SchemaField("total_jpy", "FLOAT64", mode="REQUIRED"),
 ]
 
+# 仮想通貨ごとのカラーコード
+COIN_COLORS = {
+    "Bitcoin": "#F7931A",
+    "Ethereum": "#3C3C3D",
+    "XRP": "#00AAE4",
+    "Tether": "#50AF95",
+    "BNB": "#F3BA2F",
+    "Solana": "#9945FF",
+    "USD Coin": "#2775CA",
+    "Dogecoin": "#C3A634",
+    "Cardano": "#0033AD",
+    "TRON": "#EF0027"
+}
+
 # アプリケーション関連
 CURRENCY_SYMBOLS = {'jpy': '¥', 'usd': '$'}
 TRANSACTION_TYPES_BUY = ['購入', '調整（増）']
@@ -222,7 +236,16 @@ def display_asset_pie_chart(portfolio: Dict, rate: float, symbol: str, total_ass
     pie_data = pie_data.sort_values(by="評価額(JPY)", ascending=False)
         
     pie_data['評価額_display'] = pie_data['評価額(JPY)'] * rate
-    fig = px.pie(pie_data, values='評価額_display', names='コイン名', hole=0.5, title="コイン別資産構成")
+    # ★★★ 変更点 ★★★
+    # color_discrete_mapにCOIN_COLORSを渡し、コインごとの色を指定
+    fig = px.pie(
+        pie_data, 
+        values='評価額_display', 
+        names='コイン名', 
+        hole=0.5, 
+        title="コイン別資産構成",
+        color_discrete_map=COIN_COLORS
+    )
     
     fig.update_traces(
         textposition='inside',
