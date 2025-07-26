@@ -359,43 +359,66 @@ def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_c
     
     is_hidden = st.session_state.get('balance_hidden', False)
     
+    # --- 表示用データの準備 ---
     if is_hidden:
         asset_display = f"{CURRENCY_SYMBOLS[currency]} *******"
         btc_display = "≈ ***** BTC"
         change_display = "*****"
         pct_display = "**.**%"
-        dynamic_color = "#9E9E9E" 
+        # 非表示時はニュートラルな色
+        card_top_bg = "#1E1E1E"
+        card_bottom_bg = "#2A2A2A"
+        change_text_color = "#9E9E9E"
     else:
         yesterday_asset = total_asset_jpy - total_change_24h_jpy
         change_pct = (total_change_24h_jpy / yesterday_asset * 100) if yesterday_asset > 0 else 0
         symbol = CURRENCY_SYMBOLS[currency]
         
         is_positive = total_change_24h_jpy >= 0
+        
+        # --- 色の決定 ---
+        if is_positive:
+            # プラスの場合の背景色 (緑系)
+            card_top_bg = "#1A4D3B"
+            card_bottom_bg = "#11382A"
+        else:
+            # マイナスの場合の背景色 (赤系)
+            card_top_bg = "#5C2E2E"
+            card_bottom_bg = "#442222"
+            
+        # 変動額・変動率の文字色は常に白
+        change_text_color = "#FFFFFF"
+
         change_sign = "+" if is_positive else ""
         pct_sign = "+" if is_positive else ""
-        dynamic_color = "#99FF99" if is_positive else "#FF9999"
 
         asset_display = f"{symbol}{(total_asset_jpy * rate):,.2f} {currency.upper()}"
         btc_display = f"≈ {total_asset_btc:.8f} BTC"
         change_display = f"{change_sign}{(total_change_24h_jpy * rate):,.2f} {currency.upper()}"
         pct_display = f"{pct_sign}{change_pct:.2f}%"
 
+    # --- HTMLを一行の文字列として生成 ---
     html_parts = [
-        '<div style="border-radius: 10px; overflow: hidden; font-family: sans-serif; background-color: #1E1E1E;">',
-            '<div style="padding: 20px 20px 20px 20px;">',
-                '<p style="font-size: 0.9em; margin: 0; padding: 0; color: #9E9E9E;">残高</p>',
+        # カード全体のコンテナ
+        '<div style="border-radius: 10px; overflow: hidden; font-family: sans-serif;">',
+            # 上段：動的な背景色
+            f'<div style="padding: 20px 20px 20px 20px; background-color: {card_top_bg};">',
+                '<p style="font-size: 0.9em; margin: 0; padding: 0; color: #E0E0E0;">残高</p>',
                 f'<p style="font-size: clamp(1.6em, 5vw, 2.2em); font-weight: bold; margin: 0; padding: 0; line-height: 1.2; white-space: nowrap; color: #FFFFFF;">{asset_display}</p>',
                 f'<p style="font-size: clamp(0.9em, 2.5vw, 1.1em); font-weight: 500; margin-top: 5px; color: #E0E0E0; white-space: nowrap;">{btc_display}</p>',
             '</div>',
-            '<div style="padding: 15px 20px; background-color: #2A2A2A;">',
+            # 下段：動的な背景色（上段より少し暗め）
+            f'<div style="padding: 15px 20px; background-color: {card_bottom_bg};">',
                 '<div style="display: flex; align-items: start;">',
                     '<div style="flex-basis: 50%; min-width: 0;">',
-                        '<p style="font-size: 0.9em; margin: 0; padding: 0; color: #9E9E9E;">24h 変動額</p>',
-                        f'<p style="font-size: clamp(1em, 3vw, 1.2em); font-weight: 600; margin-top: 5px; color: {dynamic_color}; white-space: nowrap;">{change_display}</p>',
+                        '<p style="font-size: 0.9em; margin: 0; padding: 0; color: #E0E0E0;">24h 変動額</p>',
+                        # 変動額の文字色は常にchange_text_color (白)
+                        f'<p style="font-size: clamp(1em, 3vw, 1.2em); font-weight: 600; margin-top: 5px; color: {change_text_color}; white-space: nowrap;">{change_display}</p>',
                     '</div>',
                     '<div style="flex-basis: 50%; min-width: 0;">',
-                        '<p style="font-size: 0.9em; margin: 0; padding: 0; color: #9E9E9E;">24h 変動率</p>',
-                        f'<p style="font-size: clamp(1em, 3vw, 1.2em); font-weight: 600; margin-top: 5px; color: {dynamic_color}; white-space: nowrap;">{pct_display}</p>',
+                        '<p style="font-size: 0.9em; margin: 0; padding: 0; color: #E0E0E0;">24h 変動率</p>',
+                        # 変動率の文字色は常にchange_text_color (白)
+                        f'<p style="font-size: clamp(1em, 3vw, 1.2em); font-weight: 600; margin-top: 5px; color: {change_text_color}; white-space: nowrap;">{pct_display}</p>',
                     '</div>',
                 '</div>',
             '</div>',
