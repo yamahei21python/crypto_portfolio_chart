@@ -438,24 +438,21 @@ def display_asset_list_new(summary_df: pd.DataFrame, currency: str, rate: float)
 
         emoji = COIN_EMOJIS.get(row['コイン名'], '🪙')
 
-        # --- HTMLカードの構築 ---
+        # --- HTMLカードの構築 (HTMLコメントを削除) ---
         card_html = textwrap.dedent(f"""
         <div style="border: 1px solid #31333F; border-radius: 10px; padding: 15px 20px; margin-bottom: 12px;">
             <div style="display: grid; grid-template-columns: minmax(100px, 1.5fr) 1.2fr 1.5fr; align-items: center; gap: 10px;">
                 
-                <!-- 左列: コイン情報 -->
                 <div>
                     <p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; padding: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{emoji} {row['コイン名']}</p>
                     <p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #808495; margin: 0; padding: 0;">{row['アカウント数']} アカウント</p>
                 </div>
 
-                <!-- 中央列: 保有数量と現在価格 -->
                 <div style="text-align: right;">
                     <p style="font-size: clamp(0.9em, 2.2vw, 1em); font-weight: 500; margin: 0; padding: 0; white-space: nowrap;">{quantity_display}</p>
                     <p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #808495; margin: 0; padding: 0; white-space: nowrap;">{price_display}</p>
                 </div>
 
-                <!-- 右列: 評価額と変動率 -->
                 <div style="text-align: right;">
                     <p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; padding: 0; white-space: nowrap;">{value_display}</p>
                     <p style="font-size: clamp(0.8em, 2vw, 0.9em); color: {change_color}; margin: 0; padding: 0; white-space: nowrap;">{change_sign} {change_display}</p>
@@ -485,18 +482,16 @@ def display_exchange_list(summary_exchange_df: pd.DataFrame, currency: str, rate
             total_value = row['評価額_jpy'] * rate
             value_display = f"{symbol}{total_value:,.2f}"
             
-        # --- HTMLカードの構築 ---
+        # --- HTMLカードの構築 (HTMLコメントを削除) ---
         card_html = textwrap.dedent(f"""
         <div style="border: 1px solid #31333F; border-radius: 10px; padding: 15px 20px; margin-bottom: 12px;">
             <div style="display: flex; justify-content: space-between; align-items: center;">
 
-                <!-- 左側: 取引所情報 -->
                 <div>
                     <p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; padding: 0; white-space: nowrap;">🏦 {row['取引所']}</p>
                     <p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #808495; margin: 0; padding: 0;">{row['コイン数']} 銘柄</p>
                 </div>
 
-                <!-- 右側: 評価額 -->
                 <div style="text-align: right;">
                     <p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; padding: 0; white-space: nowrap;">{value_display}</p>
                 </div>
