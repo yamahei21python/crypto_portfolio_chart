@@ -300,6 +300,20 @@ def summarize_portfolio_by_coin(portfolio: Dict, market_data: pd.DataFrame) -> p
 
     return summary
 
+def summarize_portfolio_by_exchange(portfolio: Dict) -> pd.DataFrame:
+    """ポートフォリオデータを取引所ごとに集計します。"""
+    if not portfolio:
+        return pd.DataFrame()
+
+    df = pd.DataFrame.from_dict(portfolio, orient='index').reset_index(drop=True)
+
+    summary = df.groupby('取引所').agg(
+        評価額_jpy=('評価額(JPY)', 'sum'),
+        コイン数=('コイン名', 'nunique')
+    ).sort_values(by='評価額_jpy', ascending=False).reset_index()
+
+    return summary
+
 def calculate_btc_value(total_asset_jpy: float, price_map: Dict[str, float]) -> float:
     """総資産をBTC換算で計算します。"""
     btc_price_jpy = price_map.get('bitcoin', 0)
@@ -419,6 +433,27 @@ def display_asset_list_new(summary_df: pd.DataFrame):
         if i < len(summary_df) - 1:
             st.divider()
 
+def display_exchange_list(summary_exchange_df: pd.DataFrame):
+    """取引所別資産をカスタムリスト形式で表示します。"""
+    st.subheader("取引所別資産")
+    if summary_exchange_df.empty:
+        st.info("保有資産はありません。")
+        return
+
+    for i, row in summary_exchange_df.iterrows():
+        col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            st.markdown(f"**🏦 {row['取引所']}**")
+            st.caption(f"{row['コイン数']} 銘柄")
+        
+        with col2:
+            st.markdown(f"<p style='text-align: right; font-size: 1.1em; font-weight: bold;'>{row['評価額_jpy']:,.2f} JPY</p>", unsafe_allow_html=True)
+
+        if i < len(summary_exchange_df) - 1:
+            st.divider()
+
+
 def display_add_transaction_form(coin_options: Dict[str, str], name_map: Dict[str, str], currency: str):
     """新しい取引履歴を登録するためのフォームを表示します。"""
     with st.expander("新しい取引履歴を追加", expanded=False):
@@ -528,26 +563,20 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
     portfolio, total_asset_jpy, total_change_jpy = calculate_portfolio(transactions_df, price_map, price_change_map, name_map)
     total_asset_btc = calculate_btc_value(total_asset_jpy, price_map)
     summary_df = summarize_portfolio_by_coin(portfolio, market_data)
+    summary_exchange_df = summarize_portfolio_by_exchange(portfolio)
 
     # UIコンポーネントを描画
     display_summary_card(total_asset_jpy, total_asset_btc, total_change_jpy)
     
-    tab_coin, tab_account, tab_history = st.tabs(["コイン", "アカウント", "履歴"])
+    tab_coin, tab_exchange, tab_history = st.tabs(["コイン", "取引所", "履歴"])
     
     with tab_coin:
         display_composition_bar(summary_df)
         st.markdown("<br>", unsafe_allow_html=True) # 見た目のためのスペース
         display_asset_list_new(summary_df)
     
-    with tab_account:
-        # 取引所別サマリーをここに表示
-        st.subheader("取引所別資産")
-        if portfolio:
-            portfolio_df = pd.DataFrame.from_dict(portfolio, orient='index').reset_index(drop=True)
-            summary_exchange_df = portfolio_df.groupby("取引所")['評価額(JPY)'].sum().sort_values(ascending=False).reset_index()
-            st.dataframe(summary_exchange_df, use_container_width=True, hide_index=True, column_config={"評価額(JPY)": st.column_config.NumberColumn(format="¥%,.0f")})
-        else:
-            st.info("保有資産はありません。")
+    with tab_exchange:
+        display_exchange_list(summary_exchange_df)
 
     with tab_history:
         display_transaction_history(transactions_df, currency='jpy')
