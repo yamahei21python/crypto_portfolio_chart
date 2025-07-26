@@ -70,7 +70,7 @@ EXCHANGES_ORDERED = ['SBIVC', 'BITPOINT', 'Binance', 'bitbank', 'GMOコイン', 
 # ポートフォリオ円グラフ用の配色
 COIN_COLORS = {
     "Bitcoin": "#F7931A", "Ethereum": "#627EEA", "Solana": "#9945FF", "XRP": "#00AAE4",
-    "Tether": "#50AF95", "BNB": "#F3BA2F", "USD Coin": "#2775CA", "Dogecoin": "#C3A634", 
+    "Tether": "#50AF95", "BNB": "#F3BA2F", "USD Coin": "#2775CA", "Dogecoin": "s#C3A634", 
     "Cardano": "#0033AD", "その他": "#D3D3D3"
 }
 
@@ -84,6 +84,7 @@ RIGHT_ALIGN_STYLE = """
     }
 </style>
 """
+
 
 # === 3. 型定義 ===
 # (型定義は今回は変更なし)
@@ -349,7 +350,8 @@ def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_c
     </div>
     """
     st.markdown(card_html, unsafe_allow_html=True)
-    
+
+
 def display_composition_bar(summary_df: pd.DataFrame):
     """資産構成を水平の積み上げ棒グラフで表示します。"""
     if summary_df.empty: return
@@ -368,7 +370,7 @@ def display_composition_bar(summary_df: pd.DataFrame):
         display_df = summary_df.copy()
 
     display_df['percentage'] = (display_df['評価額_jpy'] / total_value) * 100
-    display_df['color'] = display_df['コイン名'].map(COIN_COLORS)
+    display_df['color'] = display_df['コイン名'].map(COIN_COLORS).fillna("#D3D3D3") # 未定義のコイン色をグレーに
     
     # 凡例表示
     cols = st.columns(len(display_df))
@@ -381,9 +383,8 @@ def display_composition_bar(summary_df: pd.DataFrame):
             </div>
             """, unsafe_allow_html=True)
             
-    # プログレスバー
-    st.progress(display_df['percentage'].to_list(), text=None)
-
+    # プログレスバー (値を整数に変換してエラーを修正)
+    st.progress(display_df['percentage'].astype(int).to_list(), text=None)
 
 def display_asset_list_new(summary_df: pd.DataFrame):
     """保有資産を画像に近いカスタムリスト形式で表示します。"""
@@ -525,25 +526,21 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
 
     # UIコンポーネントを描画
     display_summary_card(total_asset_jpy, total_asset_btc, total_change_jpy)
-    st.markdown("---")
     
-    # 広告バナーのプレースホルダー
-    st.info("広告スペース（例：5秒でわかる！確定申告診断 Powered by Gtax）")
-    st.markdown("---")
-
     tab_coin, tab_account, tab_history = st.tabs(["コイン", "アカウント", "履歴"])
     
     with tab_coin:
         display_composition_bar(summary_df)
+        st.markdown("<br>", unsafe_allow_html=True) # 見た目のためのスペース
         display_asset_list_new(summary_df)
     
     with tab_account:
-        # 取引所別サマリーをここに表示（既存ロジックを再利用）
+        # 取引所別サマリーをここに表示
         st.subheader("取引所別資産")
         if portfolio:
             portfolio_df = pd.DataFrame.from_dict(portfolio, orient='index').reset_index(drop=True)
             summary_exchange_df = portfolio_df.groupby("取引所")['評価額(JPY)'].sum().sort_values(ascending=False).reset_index()
-            st.dataframe(summary_exchange_df, use_container_width=True, hide_index=True)
+            st.dataframe(summary_exchange_df, use_container_width=True, hide_index=True, column_config={"評価額(JPY)": st.column_config.NumberColumn(format="¥%,.0f")})
         else:
             st.info("保有資産はありません。")
 
