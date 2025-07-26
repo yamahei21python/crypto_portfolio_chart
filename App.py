@@ -326,39 +326,47 @@ def calculate_btc_value(total_asset_jpy: float, price_map: Dict[str, float]) -> 
 def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_change_24h_jpy: float, currency: str, rate: float):
     """画像上部のサマリーカードを模したUIを表示します。"""
     
-    yesterday_asset = total_asset_jpy - total_change_24h_jpy
-    change_pct = (total_change_24h_jpy / yesterday_asset * 100) if yesterday_asset > 0 else 0
-    symbol = CURRENCY_SYMBOLS[currency]
+    is_hidden = st.session_state.get('balance_hidden', False)
+    
+    # --- 表示用データの準備 ---
+    if is_hidden:
+        asset_display = "*****"
+        btc_display = "≈ ***** BTC"
+        change_display = "*****"
+        pct_display = "+**.**%"
+        dynamic_color = "#DCE5E4" # 非表示時はニュートラルな色
+    else:
+        yesterday_asset = total_asset_jpy - total_change_24h_jpy
+        change_pct = (total_change_24h_jpy / yesterday_asset * 100) if yesterday_asset > 0 else 0
+        symbol = CURRENCY_SYMBOLS[currency]
+        
+        is_positive = total_change_24h_jpy >= 0
+        change_sign = "+" if is_positive else ""
+        pct_sign = "+" if is_positive else ""
+        dynamic_color = "#99FF99" if is_positive else "#FF9999"
 
-    # 変動額・変動率の色と符号
-    is_positive = total_change_24h_jpy >= 0
-    change_sign = "+" if is_positive else ""
-    pct_sign = "+" if is_positive else ""
-    # 正なら緑、負なら赤に色分け。緑背景でも見やすいように明るめの色を選ぶ
-    dynamic_color = "#99FF99" if is_positive else "#FF9999" # 明るい緑と赤
+        asset_display = f"{symbol}{(total_asset_jpy * rate):,.2f} {currency.upper()}"
+        btc_display = f"≈ {total_asset_btc:.8f} BTC"
+        change_display = f"{change_sign}{(total_change_24h_jpy * rate):,.2f} {currency.upper()}"
+        pct_display = f"{pct_sign}{change_pct:.2f}%"
 
-    # HTMLとCSSで2段構成の緑色カードを表現
+    # --- HTMLカードの構築 ---
     card_html = f"""
     <div style="border-radius: 10px; overflow: hidden; font-family: sans-serif;">
-        <div style="padding: 20px; color: white; background-color: #1A594F;">
-            <div style="display: flex; align-items: flex-start; justify-content: space-between;">
-                <div>
-                    <p style="font-size: 0.9em; margin: 0; padding: 0; color: #A7C5C1;">残高</p>
-                    <p style="font-size: 2.2em; font-weight: bold; margin: 0; padding: 0; line-height: 1.2;">{symbol}{(total_asset_jpy * rate):,.2f} {currency.upper()}</p>
-                    <p style="font-size: 1.1em; font-weight: 500; margin-top: 5px; color: #DCE5E4;">≈ {total_asset_btc:.8f} BTC</p>
-                </div>
-                <span style="font-size: 1.5em; font-weight: bold; color: #DCE5E4;">👁️</span>
-            </div>
+        <div style="padding: 20px 20px 20px 20px; color: white; background-color: #1A594F;">
+            <p style="font-size: 0.9em; margin: 0; padding: 0; color: #A7C5C1;">残高</p>
+            <p style="font-size: 2.2em; font-weight: bold; margin: 0; padding: 0; line-height: 1.2;">{asset_display}</p>
+            <p style="font-size: 1.1em; font-weight: 500; margin-top: 5px; color: #DCE5E4;">{btc_display}</p>
         </div>
         <div style="padding: 15px 20px; background-color: #247565;">
             <div style="display: flex; justify-content: space-between;">
                 <div style="flex-basis: 50%;">
                     <p style="font-size: 0.9em; margin: 0; padding: 0; color: #A7C5C1;">24h 変動額</p>
-                    <p style="font-size: 1.2em; font-weight: 600; margin-top: 5px; color: {dynamic_color};">{change_sign}{(total_change_24h_jpy * rate):,.2f} {currency.upper()}</p>
+                    <p style="font-size: 1.2em; font-weight: 600; margin-top: 5px; color: {dynamic_color};">{change_display}</p>
                 </div>
                 <div style="flex-basis: 50%;">
                     <p style="font-size: 0.9em; margin: 0; padding: 0; color: #A7C5C1;">24h 変動率</p>
-                    <p style="font-size: 1.2em; font-weight: 600; margin-top: 5px; color: {dynamic_color};">{pct_sign}{change_pct:.2f}%</p>
+                    <p style="font-size: 1.2em; font-weight: 600; margin-top: 5px; color: {dynamic_color};">{pct_display}</p>
                 </div>
             </div>
         </div>
@@ -575,8 +583,17 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
     summary_exchange_df = summarize_portfolio_by_exchange(portfolio)
 
     # UIコンポーネントを描画
-    display_summary_card(total_asset_jpy, total_asset_btc, total_change_jpy, currency, rate)
-    
+    # ★★★ ここを修正 ★★★
+    # カードの隣に表示/非表示ボタンを配置
+    col1, col2 = st.columns([0.9, 0.1])
+    with col1:
+        display_summary_card(total_asset_jpy, total_asset_btc, total_change_jpy, currency, rate)
+    with col2:
+        st.markdown("<div style='margin-top: 30px;'></div>", unsafe_allow_html=True)
+        if st.button("👁️", key=f"toggle_visibility_{currency}", help="残高の表示/非表示"):
+            st.session_state.balance_hidden = not st.session_state.get('balance_hidden', False)
+            st.rerun()
+
     tab_coin, tab_exchange, tab_history = st.tabs(["コイン", "取引所", "履歴"])
     
     with tab_coin:
@@ -588,7 +605,6 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
         display_exchange_list(summary_exchange_df, currency, rate)
 
     with tab_history:
-        # ★★★ ここを修正 ★★★
         # キーが重複しないように、現在のページの通貨を渡す
         display_transaction_history(transactions_df, currency=currency)
         st.markdown("---")
@@ -622,6 +638,11 @@ def render_watchlist_tab(market_data: pd.DataFrame, currency: str, rate: float):
 
 def main():
     """アプリケーションのメインエントリポイント。"""
+    # ★★★ ここを修正 ★★★
+    # セッション状態で残高の表示/非表示を管理
+    if 'balance_hidden' not in st.session_state:
+        st.session_state.balance_hidden = False
+
     col1, _, col2 = st.columns([3, 5, 1.2])
     with col1:
         st.title("ポートフォリオ")
