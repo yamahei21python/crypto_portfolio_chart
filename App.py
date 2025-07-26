@@ -310,28 +310,49 @@ def calculate_btc_value(total_asset_jpy: float, price_map: Dict[str, float]) -> 
 
 def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_change_24h_jpy: float):
     """画像上部のサマリーカードを模したUIを表示します。"""
-    with st.container(border=True):
-        st.markdown("残高")
-        st.markdown(f"## {total_asset_jpy:,.2f} JPY")
-        st.markdown(f"**≈ {total_asset_btc:.8f} BTC**")
+    
+    yesterday_asset = total_asset_jpy - total_change_24h_jpy
+    change_pct = (total_change_24h_jpy / yesterday_asset * 100) if yesterday_asset > 0 else 0
 
-        st.divider()
+    # 変動額・変動率の色と符号
+    is_positive = total_change_24h_jpy >= 0
+    change_sign = "+" if is_positive else ""
+    pct_sign = "+" if is_positive else ""
+    # ユーザーの指示通り、正なら緑、負なら赤に色分け。緑背景でも見やすいように明るめの色を選ぶ
+    dynamic_color = "#81C784" if is_positive else "#EF9A9A" # 明るい緑と赤
 
-        col1, col2 = st.columns(2)
-        yesterday_asset = total_asset_jpy - total_change_24h_jpy
-        change_pct = (total_change_24h_jpy / yesterday_asset * 100) if yesterday_asset > 0 else 0
+    # HTMLとCSSで2段構成の緑色カードを表現
+    card_html = f"""
+    <div style="background-color: #1A594F; border-radius: 10px; overflow: hidden; font-family: sans-serif;">
+        <!-- 上段: 総資産 -->
+        <div style="padding: 20px; color: white;">
+            <div style="display: flex; align-items: flex-start; justify-content: space-between;">
+                <div>
+                    <p style="font-size: 0.9em; margin: 0; padding: 0; color: #A7C5C1;">残高</p>
+                    <p style="font-size: 2.2em; font-weight: bold; margin: 0; padding: 0; line-height: 1.2;">{total_asset_jpy:,.2f} JPY</p>
+                    <p style="font-size: 1.1em; font-weight: 500; margin-top: 5px; color: #DCE5E4;">≈ {total_asset_btc:.8f} BTC</p>
+                </div>
+                <span style="font-size: 1.5em; font-weight: bold;">👁️</span>
+            </div>
+        </div>
 
-        with col1:
-            st.markdown("24h 変動額")
-            sign = "+" if total_change_24h_jpy >= 0 else ""
-            color = "#00BFA5" if total_change_24h_jpy >= 0 else "#FF5252"
-            st.markdown(f"<p style='color:{color}; font-size: 1.1em; font-weight: 600;'>{sign}{total_change_24h_jpy:,.2f} JPY</p>", unsafe_allow_html=True)
-        with col2:
-            st.markdown("24h 変動率")
-            sign = "+" if change_pct >= 0 else ""
-            color = "#00BFA5" if change_pct >= 0 else "#FF5252"
-            st.markdown(f"<p style='color:{color}; font-size: 1.1em; font-weight: 600;'>{sign}{change_pct:.2f}%</p>", unsafe_allow_html=True)
-
+        <!-- 下段: 24時間変動 -->
+        <div style="background-color: #247565; padding: 15px 20px;">
+            <div style="display: flex; justify-content: space-between;">
+                <div style="flex-basis: 50%;">
+                    <p style="font-size: 0.9em; margin: 0; padding: 0; color: #A7C5C1;">24h 変動額</p>
+                    <p style="font-size: 1.2em; font-weight: 600; margin-top: 5px; color: {dynamic_color};">{change_sign}{total_change_24h_jpy:,.2f} JPY</p>
+                </div>
+                <div style="flex-basis: 50%;">
+                    <p style="font-size: 0.9em; margin: 0; padding: 0; color: #A7C5C1;">24h 変動率</p>
+                    <p style="font-size: 1.2em; font-weight: 600; margin-top: 5px; color: {dynamic_color};">{pct_sign}{change_pct:.2f}%</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    """
+    st.markdown(card_html, unsafe_allow_html=True)
+    
 def display_composition_bar(summary_df: pd.DataFrame):
     """資産構成を水平の積み上げ棒グラフで表示します。"""
     if summary_df.empty: return
