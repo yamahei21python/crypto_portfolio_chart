@@ -417,7 +417,6 @@ def display_asset_list_new(summary_df: pd.DataFrame, currency: str, rate: float)
         st.info("保有資産はありません。")
         return
 
-    # 各資産をループしてカードを生成
     for _, row in summary_df.iterrows():
         # --- 表示用データの準備 ---
         change_pct = row.get('price_change_percentage_24h', 0)
@@ -438,30 +437,28 @@ def display_asset_list_new(summary_df: pd.DataFrame, currency: str, rate: float)
 
         emoji = COIN_EMOJIS.get(row['コイン名'], '🪙')
 
-        # --- HTMLカードの構築 (HTMLコメントを削除) ---
-        card_html = textwrap.dedent(f"""
-        <div style="border: 1px solid #31333F; border-radius: 10px; padding: 15px 20px; margin-bottom: 12px;">
-            <div style="display: grid; grid-template-columns: minmax(100px, 1.5fr) 1.2fr 1.5fr; align-items: center; gap: 10px;">
-                
-                <div>
-                    <p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; padding: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{emoji} {row['コイン名']}</p>
-                    <p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #808495; margin: 0; padding: 0;">{row['アカウント数']} アカウント</p>
-                </div>
-
-                <div style="text-align: right;">
-                    <p style="font-size: clamp(0.9em, 2.2vw, 1em); font-weight: 500; margin: 0; padding: 0; white-space: nowrap;">{quantity_display}</p>
-                    <p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #808495; margin: 0; padding: 0; white-space: nowrap;">{price_display}</p>
-                </div>
-
-                <div style="text-align: right;">
-                    <p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; padding: 0; white-space: nowrap;">{value_display}</p>
-                    <p style="font-size: clamp(0.8em, 2vw, 0.9em); color: {change_color}; margin: 0; padding: 0; white-space: nowrap;">{change_sign} {change_display}</p>
-                </div>
-
-            </div>
-        </div>
-        """)
+        # --- HTMLを一行の文字列として生成 ---
+        html_parts = [
+            '<div style="border: 1px solid #31333F; border-radius: 10px; padding: 15px 20px; margin-bottom: 12px;">',
+                '<div style="display: grid; grid-template-columns: minmax(100px, 1.5fr) 1.2fr 1.5fr; align-items: center; gap: 10px;">',
+                    '<div>',
+                        f'<p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; padding: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{emoji} {row["コイン名"]}</p>',
+                        f'<p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #808495; margin: 0; padding: 0;">{row["アカウント数"]} アカウント</p>',
+                    '</div>',
+                    '<div style="text-align: right;">',
+                        f'<p style="font-size: clamp(0.9em, 2.2vw, 1em); font-weight: 500; margin: 0; padding: 0; white-space: nowrap;">{quantity_display}</p>',
+                        f'<p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #808495; margin: 0; padding: 0; white-space: nowrap;">{price_display}</p>',
+                    '</div>',
+                    '<div style="text-align: right;">',
+                        f'<p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; padding: 0; white-space: nowrap;">{value_display}</p>',
+                        f'<p style="font-size: clamp(0.8em, 2vw, 0.9em); color: {change_color}; margin: 0; padding: 0; white-space: nowrap;">{change_sign} {change_display}</p>',
+                    '</div>',
+                '</div>',
+            '</div>'
+        ]
+        card_html = "".join(html_parts)
         st.markdown(card_html, unsafe_allow_html=True)
+
 
 def display_exchange_list(summary_exchange_df: pd.DataFrame, currency: str, rate: float):
     """取引所別資産をレスポンシブなカード形式で表示します。"""
@@ -473,7 +470,6 @@ def display_exchange_list(summary_exchange_df: pd.DataFrame, currency: str, rate
         st.info("保有資産はありません。")
         return
 
-    # 各取引所をループしてカードを生成
     for _, row in summary_exchange_df.iterrows():
         # --- 表示用データの準備 ---
         if is_hidden:
@@ -482,23 +478,21 @@ def display_exchange_list(summary_exchange_df: pd.DataFrame, currency: str, rate
             total_value = row['評価額_jpy'] * rate
             value_display = f"{symbol}{total_value:,.2f}"
             
-        # --- HTMLカードの構築 (HTMLコメントを削除) ---
-        card_html = textwrap.dedent(f"""
-        <div style="border: 1px solid #31333F; border-radius: 10px; padding: 15px 20px; margin-bottom: 12px;">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-
-                <div>
-                    <p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; padding: 0; white-space: nowrap;">🏦 {row['取引所']}</p>
-                    <p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #808495; margin: 0; padding: 0;">{row['コイン数']} 銘柄</p>
-                </div>
-
-                <div style="text-align: right;">
-                    <p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; padding: 0; white-space: nowrap;">{value_display}</p>
-                </div>
-
-            </div>
-        </div>
-        """)
+        # --- HTMLを一行の文字列として生成 ---
+        html_parts = [
+            '<div style="border: 1px solid #31333F; border-radius: 10px; padding: 15px 20px; margin-bottom: 12px;">',
+                '<div style="display: flex; justify-content: space-between; align-items: center;">',
+                    '<div>',
+                        f'<p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; padding: 0; white-space: nowrap;">🏦 {row["取引所"]}</p>',
+                        f'<p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #808495; margin: 0; padding: 0;">{row["コイン数"]} 銘柄</p>',
+                    '</div>',
+                    '<div style="text-align: right;">',
+                        f'<p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; padding: 0; white-space: nowrap;">{value_display}</p>',
+                    '</div>',
+                '</div>',
+            '</div>'
+        ]
+        card_html = "".join(html_parts)
         st.markdown(card_html, unsafe_allow_html=True)
 
 def display_add_transaction_form(coin_options: Dict[str, str], name_map: Dict[str, str], currency: str):
