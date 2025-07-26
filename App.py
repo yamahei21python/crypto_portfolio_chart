@@ -113,26 +113,6 @@ button[data-baseweb="tab"][aria-selected="true"] {
 [data-testid="stVerticalBlock"] > [data-testid="stVerticalBlock"] {
     border: 1px solid #444444 !important;
 }
-/* --- トップ操作ボタンのスタイル --- */
-.top-controls .stButton > button {
-    width: 36px;  /* アイコンサイズを調整 (60%程度) */
-    height: 36px;
-    padding: 0;
-    border-radius: 50%; /* 円形にする */
-    border: 1px solid #444444;
-    background-color: transparent;
-    color: #E0E0E0;
-    font-size: 16px; /* アイコン自体のサイズ */
-    transition: all 0.2s;
-}
-.top-controls .stButton > button:hover {
-    border-color: #FFFFFF;
-    color: #FFFFFF;
-    transform: scale(1.1);
-}
-.top-controls .stButton > button:active {
-    transform: scale(0.95);
-}
 </style>
 """
 
@@ -669,15 +649,15 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
     summary_df = summarize_portfolio_by_coin(portfolio, market_data)
     summary_exchange_df = summarize_portfolio_by_exchange(portfolio)
 
-    st.markdown('<div class="top-controls">', unsafe_allow_html=True)
-    _, btn1_col, btn2_col, btn3_col = st.columns([10, 1, 1, 1])
-
-    with btn1_col:
+    col1, col2 = st.columns([0.9, 0.1])
+    with col1:
+        display_summary_card(total_asset_jpy, total_asset_btc, total_change_jpy, currency, rate)
+    with col2:
+        st.markdown("<div style='margin-top: 30px;'></div>", unsafe_allow_html=True)
         if st.button("👁️", key=f"toggle_visibility_{currency}", help="残高の表示/非表示"):
             st.session_state.balance_hidden = not st.session_state.get('balance_hidden', False)
             st.rerun()
-    
-    with btn2_col:
+        
         if currency == 'jpy':
             button_label = "USD"
             new_currency = 'usd'
@@ -688,15 +668,11 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
         if st.button(button_label, key=f"currency_toggle_main_{currency}"):
             st.session_state.currency = new_currency
             st.rerun()
-    
-    with btn3_col:
+            
         if st.button("🔄", key=f"refresh_data_{currency}", help="市場価格を更新"):
             st.cache_data.clear()
             st.toast("最新の市場データに更新しました。", icon="🔄")
             st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    display_summary_card(total_asset_jpy, total_asset_btc, total_change_jpy, currency, rate)
     
     st.divider()
 
