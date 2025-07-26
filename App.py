@@ -687,10 +687,6 @@ def main():
     if 'currency' not in st.session_state:
         st.session_state.currency = 'jpy'
 
-    # ★★★ ここを修正 ★★★
-    # タイトルのみ表示
-    st.title("ポートフォリオ")
-
     st.markdown(RIGHT_ALIGN_STYLE, unsafe_allow_html=True)
     if not bq_client:
         st.stop()
