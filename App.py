@@ -379,8 +379,8 @@ def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_c
         # --- 色の決定 (より明るい色に変更) ---
         if is_positive:
             # プラスの場合の背景色 (明るい緑系)
-            card_top_bg = "#00bf3c" # メインの緑
-            card_bottom_bg = "#49bf00" # 少し暗い緑
+            card_top_bg = "#0c6e0a" # メインの緑
+            card_bottom_bg = "#10800e" # 少し暗い緑
         else:
             # マイナスの場合の背景色 (明るい赤系)
             card_top_bg = "#FF5252" # メインの赤
