@@ -384,22 +384,26 @@ def display_composition_bar(summary_df: pd.DataFrame):
     if len(summary_df) > top_n:
         top_df = summary_df.head(top_n).copy()
         other_value = summary_df.tail(len(summary_df) - top_n)['評価額_jpy'].sum()
-        other_row = pd.DataFrame([{'コイン名': 'その他', '評価額_jpy': other_value}])
+        # 「その他」行にも 'symbol' を追加してDataFrameの構造を統一
+        other_row = pd.DataFrame([{'コイン名': 'その他', '評価額_jpy': other_value, 'symbol': 'その他'}])
         display_df = pd.concat([top_df, other_row], ignore_index=True)
     else:
         display_df = summary_df.copy()
 
     display_df['percentage'] = (display_df['評価額_jpy'] / total_value) * 100
-    display_df['color'] = display_df['コイン名'].map(COIN_COLORS).fillna("#D3D3D3") # 未定義のコイン色をグレーに
+    display_df['color'] = display_df['コイン名'].map(COIN_COLORS).fillna("#D3D3D3") # 色のマッピングはフルネームを使用
 
     # 凡例表示
     cols = st.columns(len(display_df))
     for i, row in display_df.iterrows():
+        # 表示するテキストを決定（「その他」の場合はそのまま、それ以外はシンボルを大文字に）
+        display_text = row['symbol'].upper() if row['コイン名'] != 'その他' else 'その他'
+        
         with cols[i]:
             st.markdown(f"""
             <div style="display: flex; align-items: center; font-size: 0.9em;">
                 <div style="width: 12px; height: 12px; background-color: {row['color']}; border-radius: 3px; margin-right: 5px;"></div>
-                <span>{row['コイン名']} {row['percentage']:.2f}%</span>
+                <span>{display_text} {row['percentage']:.2f}%</span>
             </div>
             """, unsafe_allow_html=True)
             
