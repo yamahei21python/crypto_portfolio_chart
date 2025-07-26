@@ -318,8 +318,9 @@ def calculate_btc_value(total_asset_jpy: float, price_map: Dict[str, float]) -> 
 # === 7. UIコンポーネント関数 ===
 def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_change_24h_jpy: float, currency: str, rate: float):
     """画像上部のサマリーカードを模したUIを表示します。"""
+    
     is_hidden = st.session_state.get('balance_hidden', False)
-
+    
     # --- 表示用データの準備 ---
     if is_hidden:
         asset_display = f"{CURRENCY_SYMBOLS[currency]} *******"
@@ -342,23 +343,24 @@ def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_c
         change_display = f"{change_sign}{(total_change_24h_jpy * rate):,.2f} {currency.upper()}"
         pct_display = f"{pct_sign}{change_pct:.2f}%"
 
-    # --- HTMLカードの構築 ---
+    # --- HTMLカードの構築 (修正箇所) ---
+    # font-sizeをclamp()に変更し、レスポンシブに対応
     card_html = f"""
     <div style="border-radius: 10px; overflow: hidden; font-family: sans-serif;">
         <div style="padding: 20px 20px 20px 20px; color: white; background-color: #1A594F;">
             <p style="font-size: 0.9em; margin: 0; padding: 0; color: #A7C5C1;">残高</p>
-            <p style="font-size: 2.2em; font-weight: bold; margin: 0; padding: 0; line-height: 1.2;">{asset_display}</p>
-            <p style="font-size: 1.1em; font-weight: 500; margin-top: 5px; color: #DCE5E4;">{btc_display}</p>
+            <p style="font-size: clamp(1.6em, 5vw, 2.2em); font-weight: bold; margin: 0; padding: 0; line-height: 1.2; white-space: nowrap;">{asset_display}</p>
+            <p style="font-size: clamp(0.9em, 2.5vw, 1.1em); font-weight: 500; margin-top: 5px; color: #DCE5E4; white-space: nowrap;">{btc_display}</p>
         </div>
         <div style="padding: 15px 20px; background-color: #247565;">
-            <div style="display: flex; justify-content: space-between;">
-                <div style="flex-basis: 50%;">
+            <div style="display: flex; justify-content: space-between; gap: 10px;">
+                <div style="flex-basis: 50%; min-width: 0;">
                     <p style="font-size: 0.9em; margin: 0; padding: 0; color: #A7C5C1;">24h 変動額</p>
-                    <p style="font-size: 1.2em; font-weight: 600; margin-top: 5px; color: {dynamic_color};">{change_display}</p>
+                    <p style="font-size: clamp(1em, 3vw, 1.2em); font-weight: 600; margin-top: 5px; color: {dynamic_color}; white-space: nowrap;">{change_display}</p>
                 </div>
-                <div style="flex-basis: 50%;">
+                <div style="flex-basis: 50%; min-width: 0; text-align: right;">
                     <p style="font-size: 0.9em; margin: 0; padding: 0; color: #A7C5C1;">24h 変動率</p>
-                    <p style="font-size: 1.2em; font-weight: 600; margin-top: 5px; color: {dynamic_color};">{pct_display}</p>
+                    <p style="font-size: clamp(1em, 3vw, 1.2em); font-weight: 600; margin-top: 5px; color: {dynamic_color}; white-space: nowrap;">{pct_display}</p>
                 </div>
             </div>
         </div>
