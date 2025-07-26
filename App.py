@@ -25,7 +25,6 @@ from google.cloud import bigquery
 from google.oauth2 import service_account
 import google.api_core.exceptions
 from typing import Dict, Any, Tuple, TypedDict
-import textwrap
 
 # === 2. 定数・グローバル設定 ===
 # --- BigQuery関連 ---
@@ -288,9 +287,13 @@ def summarize_portfolio_by_coin(portfolio: Dict, market_data: pd.DataFrame) -> p
         アカウント数=('取引所', 'nunique')
     ).sort_values(by='評価額_jpy', ascending=False)
 
-    market_subset = market_data[['id', 'price_change_percentage_24h']].rename(columns={'id': 'コインID'})
+    # 市場データからシンボル(symbol)も取得するように修正
+    market_subset = market_data[['id', 'symbol', 'price_change_percentage_24h']].rename(columns={'id': 'コインID'})
     summary = summary.reset_index().merge(market_subset, on='コインID', how='left')
+    
+    # マージ後にNaNになる可能性がある列を埋める
     summary['price_change_percentage_24h'] = summary['price_change_percentage_24h'].fillna(0)
+    summary['symbol'] = summary['symbol'].fillna('') # シンボルが取得できない場合に備える
 
     # 保有数量がゼロに近いコインを除外
     summary = summary[summary['保有数量'] > 1e-9]
@@ -344,28 +347,29 @@ def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_c
         change_display = f"{change_sign}{(total_change_24h_jpy * rate):,.2f} {currency.upper()}"
         pct_display = f"{pct_sign}{change_pct:.2f}%"
 
-    # --- HTMLカードの構築 (50%/50%分割、両方左揃えに修正) ---
-    card_html = textwrap.dedent(f"""
-        <div style="border-radius: 10px; overflow: hidden; font-family: sans-serif;">
-            <div style="padding: 20px 20px 20px 20px; color: white; background-color: #1A594F;">
-                <p style="font-size: 0.9em; margin: 0; padding: 0; color: #A7C5C1;">残高</p>
-                <p style="font-size: clamp(1.6em, 5vw, 2.2em); font-weight: bold; margin: 0; padding: 0; line-height: 1.2; white-space: nowrap;">{asset_display}</p>
-                <p style="font-size: clamp(0.9em, 2.5vw, 1.1em); font-weight: 500; margin-top: 5px; color: #DCE5E4; white-space: nowrap;">{btc_display}</p>
-            </div>
-            <div style="padding: 15px 20px; background-color: #247565;">
-                <div style="display: flex; align-items: start;">
-                    <div style="flex-basis: 60%; min-width: 0;">
-                        <p style="font-size: 0.9em; margin: 0; padding: 0; color: #A7C5C1;">24h 変動額</p>
-                        <p style="font-size: clamp(1em, 3vw, 1.2em); font-weight: 600; margin-top: 5px; color: {dynamic_color}; white-space: nowrap;">{change_display}</p>
-                    </div>
-                    <div style="flex-basis: 40%; min-width: 0;">
-                        <p style="font-size: 0.9em; margin: 0; padding: 0; color: #A7C5C1;">24h 変動率</p>
-                        <p style="font-size: clamp(1em, 3vw, 1.2em); font-weight: 600; margin-top: 5px; color: {dynamic_color}; white-space: nowrap;">{pct_display}</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-    """)
+    # --- HTMLを一行の文字列として生成 ---
+    html_parts = [
+        '<div style="border-radius: 10px; overflow: hidden; font-family: sans-serif;">',
+            '<div style="padding: 20px 20px 20px 20px; color: white; background-color: #1A594F;">',
+                '<p style="font-size: 0.9em; margin: 0; padding: 0; color: #A7C5C1;">残高</p>',
+                f'<p style="font-size: clamp(1.6em, 5vw, 2.2em); font-weight: bold; margin: 0; padding: 0; line-height: 1.2; white-space: nowrap;">{asset_display}</p>',
+                f'<p style="font-size: clamp(0.9em, 2.5vw, 1.1em); font-weight: 500; margin-top: 5px; color: #DCE5E4; white-space: nowrap;">{btc_display}</p>',
+            '</div>',
+            '<div style="padding: 15px 20px; background-color: #247565;">',
+                '<div style="display: flex; align-items: start;">',
+                    '<div style="flex-basis: 50%; min-width: 0;">',
+                        '<p style="font-size: 0.9em; margin: 0; padding: 0; color: #A7C5C1;">24h 変動額</p>',
+                        f'<p style="font-size: clamp(1em, 3vw, 1.2em); font-weight: 600; margin-top: 5px; color: {dynamic_color}; white-space: nowrap;">{change_display}</p>',
+                    '</div>',
+                    '<div style="flex-basis: 50%; min-width: 0;">',
+                        '<p style="font-size: 0.9em; margin: 0; padding: 0; color: #A7C5C1;">24h 変動率</p>',
+                        f'<p style="font-size: clamp(1em, 3vw, 1.2em); font-weight: 600; margin-top: 5px; color: {dynamic_color}; white-space: nowrap;">{pct_display}</p>',
+                    '</div>',
+                '</div>',
+            '</div>',
+        '</div>'
+    ]
+    card_html = "".join(html_parts)
     st.markdown(card_html, unsafe_allow_html=True)
 
 def display_composition_bar(summary_df: pd.DataFrame):
@@ -443,7 +447,7 @@ def display_asset_list_new(summary_df: pd.DataFrame, currency: str, rate: float)
                 '<div style="display: grid; grid-template-columns: minmax(100px, 1.5fr) 1.2fr 1.5fr; align-items: center; gap: 10px;">',
                     '<div>',
                         f'<p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; padding: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{emoji} {row["コイン名"]}</p>',
-                        f'<p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #808495; margin: 0; padding: 0;">{row["アカウント数"]} アカウント</p>',
+                        f'<p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #808495; margin: 0; padding: 0;">{row["symbol"].upper()}・{row["アカウント数"]} アカウント</p>',
                     '</div>',
                     '<div style="text-align: right;">',
                         f'<p style="font-size: clamp(0.9em, 2.2vw, 1em); font-weight: 500; margin: 0; padding: 0; white-space: nowrap;">{quantity_display}</p>',
