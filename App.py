@@ -498,12 +498,14 @@ def display_transaction_history(transactions_df: pd.DataFrame, currency: str):
 
     # 編集フォームの表示
     if 'edit_transaction_data' in st.session_state:
-        _render_edit_form(transactions_df, currency)
+        # フォームのキーも通貨ごとにユニークにする
+        if st.session_state.get('edit_form_currency') == currency:
+            _render_edit_form(transactions_df, currency)
 
     # 履歴一覧の表示
     for index, row in transactions_df.iterrows():
+        unique_key = f"{currency}_{index}"
         with st.container(border=True):
-            unique_key = f"{currency}_{index}"
             cols = st.columns([4, 2])
             with cols[0]:
                 st.markdown(f"**{row['コイン名']}** - {row['登録種別']}")
@@ -512,6 +514,7 @@ def display_transaction_history(transactions_df: pd.DataFrame, currency: str):
             with cols[1]:
                 if st.button("編集", key=f"edit_{unique_key}", use_container_width=True):
                     st.session_state['edit_transaction_data'] = {'index': index}
+                    st.session_state['edit_form_currency'] = currency
                     st.rerun()
                 if st.button("削除 🗑️", key=f"del_{unique_key}", use_container_width=True, help="この履歴を削除します"):
                     if delete_transaction_from_bq(row):
@@ -585,10 +588,11 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
         display_exchange_list(summary_exchange_df, currency, rate)
 
     with tab_history:
-        # 履歴はJPY建てで固定
-        display_transaction_history(transactions_df, currency='jpy')
+        # ★★★ ここを修正 ★★★
+        # キーが重複しないように、現在のページの通貨を渡す
+        display_transaction_history(transactions_df, currency=currency)
         st.markdown("---")
-        display_add_transaction_form(coin_options, name_map, currency='jpy')
+        display_add_transaction_form(coin_options, name_map, currency=currency)
 
 
 def render_watchlist_tab(market_data: pd.DataFrame, currency: str, rate: float):
