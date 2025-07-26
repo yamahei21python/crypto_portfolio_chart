@@ -72,13 +72,50 @@ COIN_COLORS = {
 }
 
 # --- CSSスタイル ---
-# DataFrameの数値を右寄せにするためのカスタムCSS
-RIGHT_ALIGN_STYLE = """
+# 全体を黒テーマにするためのカスタムCSS
+BLACK_THEME_CSS = """
 <style>
-    .right-align-table .stDataFrame [data-testid="stDataFrameData-row"] > div {
-        text-align: right !important;
-        justify-content: flex-end !important;
-    }
+/* --- 全体的な背景とテキスト色 --- */
+body, .main, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
+    background-color: #000000;
+    color: #E0E0E0;
+}
+[data-testid="stSidebar"] {
+    background-color: #0E0E0E;
+}
+h1, h2, h3, h4, h5, h6 {
+    color: #FFFFFF;
+}
+
+/* --- Streamlitウィジェットの調整 --- */
+/* タブ */
+[data-testid="stTabs"] {
+    color: #E0E0E0;
+}
+button[data-baseweb="tab"] {
+    color: #9E9E9E;
+}
+button[data-baseweb="tab"][aria-selected="true"] {
+    color: #FFFFFF;
+    border-bottom: 2px solid #FFFFFF;
+}
+
+/* DataFrameのヘッダー */
+[data-testid="stDataFrame"] thead th {
+    background-color: #1E1E1E;
+    color: #FFFFFF;
+}
+/* テーブルの右寄せ */
+.right-align-table .stDataFrame [data-testid="stDataFrameData-row"] > div {
+    text-align: right !important;
+    justify-content: flex-end !important;
+}
+
+/* --- カスタムコンポーネントの色調整 --- */
+/* 履歴の枠線 */
+[data-testid="stVerticalBlock"] > [data-testid="stVerticalBlock"] {
+    border: 1px solid #444444 !important;
+}
 </style>
 """
 
@@ -287,15 +324,12 @@ def summarize_portfolio_by_coin(portfolio: Dict, market_data: pd.DataFrame) -> p
         アカウント数=('取引所', 'nunique')
     ).sort_values(by='評価額_jpy', ascending=False)
 
-    # 市場データからシンボル(symbol)も取得するように修正
     market_subset = market_data[['id', 'symbol', 'price_change_percentage_24h']].rename(columns={'id': 'コインID'})
     summary = summary.reset_index().merge(market_subset, on='コインID', how='left')
     
-    # マージ後にNaNになる可能性がある列を埋める
     summary['price_change_percentage_24h'] = summary['price_change_percentage_24h'].fillna(0)
-    summary['symbol'] = summary['symbol'].fillna('') # シンボルが取得できない場合に備える
+    summary['symbol'] = summary['symbol'].fillna('')
 
-    # 保有数量がゼロに近いコインを除外
     summary = summary[summary['保有数量'] > 1e-9]
 
     return summary
@@ -325,13 +359,12 @@ def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_c
     
     is_hidden = st.session_state.get('balance_hidden', False)
     
-    # --- 表示用データの準備 ---
     if is_hidden:
         asset_display = f"{CURRENCY_SYMBOLS[currency]} *******"
         btc_display = "≈ ***** BTC"
         change_display = "*****"
         pct_display = "**.**%"
-        dynamic_color = "#DCE5E4" # 非表示時はニュートラルな色
+        dynamic_color = "#9E9E9E" 
     else:
         yesterday_asset = total_asset_jpy - total_change_24h_jpy
         change_pct = (total_change_24h_jpy / yesterday_asset * 100) if yesterday_asset > 0 else 0
@@ -347,22 +380,21 @@ def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_c
         change_display = f"{change_sign}{(total_change_24h_jpy * rate):,.2f} {currency.upper()}"
         pct_display = f"{pct_sign}{change_pct:.2f}%"
 
-    # --- HTMLを一行の文字列として生成 ---
     html_parts = [
-        '<div style="border-radius: 10px; overflow: hidden; font-family: sans-serif;">',
-            '<div style="padding: 20px 20px 20px 20px; color: white; background-color: #1A594F;">',
-                '<p style="font-size: 0.9em; margin: 0; padding: 0; color: #A7C5C1;">残高</p>',
-                f'<p style="font-size: clamp(1.6em, 5vw, 2.2em); font-weight: bold; margin: 0; padding: 0; line-height: 1.2; white-space: nowrap;">{asset_display}</p>',
-                f'<p style="font-size: clamp(0.9em, 2.5vw, 1.1em); font-weight: 500; margin-top: 5px; color: #DCE5E4; white-space: nowrap;">{btc_display}</p>',
+        '<div style="border-radius: 10px; overflow: hidden; font-family: sans-serif; background-color: #1E1E1E;">',
+            '<div style="padding: 20px 20px 20px 20px;">',
+                '<p style="font-size: 0.9em; margin: 0; padding: 0; color: #9E9E9E;">残高</p>',
+                f'<p style="font-size: clamp(1.6em, 5vw, 2.2em); font-weight: bold; margin: 0; padding: 0; line-height: 1.2; white-space: nowrap; color: #FFFFFF;">{asset_display}</p>',
+                f'<p style="font-size: clamp(0.9em, 2.5vw, 1.1em); font-weight: 500; margin-top: 5px; color: #E0E0E0; white-space: nowrap;">{btc_display}</p>',
             '</div>',
-            '<div style="padding: 15px 20px; background-color: #247565;">',
+            '<div style="padding: 15px 20px; background-color: #2A2A2A;">',
                 '<div style="display: flex; align-items: start;">',
                     '<div style="flex-basis: 50%; min-width: 0;">',
-                        '<p style="font-size: 0.9em; margin: 0; padding: 0; color: #A7C5C1;">24h 変動額</p>',
+                        '<p style="font-size: 0.9em; margin: 0; padding: 0; color: #9E9E9E;">24h 変動額</p>',
                         f'<p style="font-size: clamp(1em, 3vw, 1.2em); font-weight: 600; margin-top: 5px; color: {dynamic_color}; white-space: nowrap;">{change_display}</p>',
                     '</div>',
                     '<div style="flex-basis: 50%; min-width: 0;">',
-                        '<p style="font-size: 0.9em; margin: 0; padding: 0; color: #A7C5C1;">24h 変動率</p>',
+                        '<p style="font-size: 0.9em; margin: 0; padding: 0; color: #9E9E9E;">24h 変動率</p>',
                         f'<p style="font-size: clamp(1em, 3vw, 1.2em); font-weight: 600; margin-top: 5px; color: {dynamic_color}; white-space: nowrap;">{pct_display}</p>',
                     '</div>',
                 '</div>',
@@ -379,7 +411,6 @@ def display_composition_bar(summary_df: pd.DataFrame):
     total_value = summary_df['評価額_jpy'].sum()
     if total_value <= 0: return
 
-    # 上位N件 + その他で集計
     top_n = 5
     if len(summary_df) > top_n:
         top_df = summary_df.head(top_n).copy()
@@ -392,8 +423,6 @@ def display_composition_bar(summary_df: pd.DataFrame):
     display_df['percentage'] = (display_df['評価額_jpy'] / total_value) * 100
     display_df['color'] = display_df['コイン名'].map(COIN_COLORS).fillna("#D3D3D3")
 
-    # --- 凡例表示の修正 ---
-    # st.columns をやめて、Flexboxを使った単一のHTMLコンポーネントに変更
     legend_parts = [
         '<div style="display: flex; flex-wrap: nowrap; gap: 15px; overflow-x: auto; padding-bottom: 5px;">'
     ]
@@ -404,7 +433,7 @@ def display_composition_bar(summary_df: pd.DataFrame):
         item_html = (
             '<div style="display: flex; align-items: center; flex-shrink: 0;">'
             f'<div style="width: 12px; height: 12px; background-color: {row["color"]}; border-radius: 3px; margin-right: 5px;"></div>'
-            f'<span style="font-size: clamp(0.75em, 2vw, 0.9em); white-space: nowrap;">{display_text} {row["percentage"]:.2f}%</span>'
+            f'<span style="font-size: clamp(0.75em, 2vw, 0.9em); white-space: nowrap; color: #E0E0E0;">{display_text} {row["percentage"]:.2f}%</span>'
             '</div>'
         )
         legend_parts.append(item_html)
@@ -413,7 +442,6 @@ def display_composition_bar(summary_df: pd.DataFrame):
     legend_html = "".join(legend_parts)
     st.markdown(legend_html, unsafe_allow_html=True)
 
-    # HTMLで積み上げ棒グラフを作成
     bar_html = '<div style="display: flex; width: 100%; height: 12px; border-radius: 5px; overflow: hidden; margin-top: 10px;">'
     for _, row in display_df.iterrows():
         bar_html += f'<div style="width: {row["percentage"]}%; background-color: {row["color"]};"></div>'
@@ -432,9 +460,8 @@ def display_asset_list_new(summary_df: pd.DataFrame, currency: str, rate: float)
         return
 
     for _, row in summary_df.iterrows():
-        # --- 表示用データの準備 ---
         change_pct = row.get('price_change_percentage_24h', 0)
-        change_color = "#00BFA5" if change_pct >= 0 else "#FF5252"
+        change_color = "#99FF99" if change_pct >= 0 else "#FF9999"
         change_sign = "▲" if change_pct >= 0 else "▼"
         change_display = f"{abs(change_pct):.2f}%"
         
@@ -451,20 +478,19 @@ def display_asset_list_new(summary_df: pd.DataFrame, currency: str, rate: float)
 
         emoji = COIN_EMOJIS.get(row['コイン名'], '🪙')
 
-        # --- HTMLを一行の文字列として生成 ---
         html_parts = [
-            '<div style="border: 1px solid #31333F; border-radius: 10px; padding: 15px 20px; margin-bottom: 12px;">',
+            '<div style="background-color: #1E1E1E; border: 1px solid #444444; border-radius: 10px; padding: 15px 20px; margin-bottom: 12px;">',
                 '<div style="display: grid; grid-template-columns: 2fr 3fr 5fr; align-items: center; gap: 10px;">',
                     '<div>',
-                        f'<p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; padding: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{emoji} {row["symbol"].upper()}</p>',
-                        f'<p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #808495; margin: 0; padding: 0;">{row["アカウント数"]} 取引所</p>',
+                        f'<p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; padding: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #FFFFFF;">{emoji} {row["symbol"].upper()}</p>',
+                        f'<p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #9E9E9E; margin: 0; padding: 0;">{row["アカウント数"]} 取引所</p>',
                     '</div>',
                     '<div style="text-align: right;">',
-                        f'<p style="font-size: clamp(0.9em, 2.2vw, 1em); font-weight: 500; margin: 0; padding: 0; white-space: nowrap;">{quantity_display}</p>',
-                        f'<p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #808495; margin: 0; padding: 0; white-space: nowrap;">{price_display}</p>',
+                        f'<p style="font-size: clamp(0.9em, 2.2vw, 1em); font-weight: 500; margin: 0; padding: 0; white-space: nowrap; color: #E0E0E0;">{quantity_display}</p>',
+                        f'<p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #9E9E9E; margin: 0; padding: 0; white-space: nowrap;">{price_display}</p>',
                     '</div>',
                     '<div style="text-align: right;">',
-                        f'<p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; padding: 0; white-space: nowrap;">{value_display}</p>',
+                        f'<p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; padding: 0; white-space: nowrap; color: #FFFFFF;">{value_display}</p>',
                         f'<p style="font-size: clamp(0.8em, 2vw, 0.9em); color: {change_color}; margin: 0; padding: 0; white-space: nowrap;">{change_sign} {change_display}</p>',
                     '</div>',
                 '</div>',
@@ -485,23 +511,21 @@ def display_exchange_list(summary_exchange_df: pd.DataFrame, currency: str, rate
         return
 
     for _, row in summary_exchange_df.iterrows():
-        # --- 表示用データの準備 ---
         if is_hidden:
             value_display = f"{symbol}*****"
         else:
             total_value = row['評価額_jpy'] * rate
             value_display = f"{symbol}{total_value:,.2f}"
             
-        # --- HTMLを一行の文字列として生成 ---
         html_parts = [
-            '<div style="border: 1px solid #31333F; border-radius: 10px; padding: 15px 20px; margin-bottom: 12px;">',
+            '<div style="background-color: #1E1E1E; border: 1px solid #444444; border-radius: 10px; padding: 15px 20px; margin-bottom: 12px;">',
                 '<div style="display: flex; justify-content: space-between; align-items: center;">',
                     '<div>',
-                        f'<p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; padding: 0; white-space: nowrap;">🏦 {row["取引所"]}</p>',
-                        f'<p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #808495; margin: 0; padding: 0;">{row["コイン数"]} 銘柄</p>',
+                        f'<p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; padding: 0; white-space: nowrap; color: #FFFFFF;">🏦 {row["取引所"]}</p>',
+                        f'<p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #9E9E9E; margin: 0; padding: 0;">{row["コイン数"]} 銘柄</p>',
                     '</div>',
                     '<div style="text-align: right;">',
-                        f'<p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; padding: 0; white-space: nowrap;">{value_display}</p>',
+                        f'<p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; padding: 0; white-space: nowrap; color: #FFFFFF;">{value_display}</p>',
                     '</div>',
                 '</div>',
             '</div>'
@@ -545,13 +569,10 @@ def display_transaction_history(transactions_df: pd.DataFrame, currency: str):
         st.info("まだ登録履歴がありません。")
         return
     
-    # 編集フォームの表示
     if 'edit_transaction_data' in st.session_state:
-        # フォームのキーも通貨ごとにユニークにする
         if st.session_state.get('edit_form_currency') == currency:
             _render_edit_form(transactions_df, currency)
 
-    # 履歴一覧の表示
     for index, row in transactions_df.iterrows():
         unique_key = f"{currency}_{index}"
         with st.container(border=True):
@@ -610,7 +631,6 @@ def _render_edit_form(transactions_df: pd.DataFrame, currency: str):
 # === 8. ページ描画関数 ===
 def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFrame, currency: str, rate: float):
     """ポートフォリオページの全コンポーネントを描画します。"""
-    # データを準備
     price_map = market_data.set_index('id')['price_jpy'].to_dict()
     price_change_map = market_data.set_index('id')['price_change_24h_jpy'].to_dict()
     name_map = market_data.set_index('id')['name'].to_dict()
@@ -621,7 +641,6 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
     summary_df = summarize_portfolio_by_coin(portfolio, market_data)
     summary_exchange_df = summarize_portfolio_by_exchange(portfolio)
 
-    # UIコンポーネントを描画
     col1, col2 = st.columns([0.9, 0.1])
     with col1:
         display_summary_card(total_asset_jpy, total_asset_btc, total_change_jpy, currency, rate)
@@ -631,7 +650,6 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
             st.session_state.balance_hidden = not st.session_state.get('balance_hidden', False)
             st.rerun()
         
-        # 通貨切替ボタンのラベルを定義
         if currency == 'jpy':
             button_label = "USD"
             new_currency = 'usd'
@@ -639,12 +657,10 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
             button_label = "JPY"
             new_currency = 'jpy'
 
-        # 通貨切替ボタン
         if st.button(button_label, key=f"currency_toggle_main_{currency}"):
             st.session_state.currency = new_currency
             st.rerun()
             
-        # データ更新ボタン
         if st.button("🔄", key=f"refresh_data_{currency}", help="市場価格を更新"):
             st.cache_data.clear()
             st.toast("最新の市場データに更新しました。", icon="🔄")
@@ -674,7 +690,7 @@ def render_watchlist_tab(market_data: pd.DataFrame, currency: str, rate: float):
         st.warning("時価総額データが取得できませんでした。")
         return
     
-    watchlist_df = market_data.copy().head(20) # 上位20に限定
+    watchlist_df = market_data.copy().head(20)
     symbol = CURRENCY_SYMBOLS[currency]
     watchlist_df['現在価格'] = (watchlist_df['price_jpy'] * rate).apply(lambda x: format_currency(x, symbol, 4 if currency == 'jpy' else 2))
     watchlist_df['時価総額'] = (watchlist_df['market_cap'] * rate).apply(lambda x: format_currency(x, symbol))
@@ -692,13 +708,13 @@ def render_watchlist_tab(market_data: pd.DataFrame, currency: str, rate: float):
 # === 9. メイン処理 ===
 def main():
     """アプリケーションのメインエントリポイント。"""
-    # セッション状態で管理する変数を初期化
+    st.markdown(BLACK_THEME_CSS, unsafe_allow_html=True)
+    
     if 'balance_hidden' not in st.session_state:
         st.session_state.balance_hidden = False
     if 'currency' not in st.session_state:
         st.session_state.currency = 'jpy'
     
-    st.markdown(RIGHT_ALIGN_STYLE, unsafe_allow_html=True)
     if not bq_client:
         st.stop()
 
@@ -714,13 +730,11 @@ def main():
     main_tab, watchlist_tab = st.tabs(["ポートフォリオ", "ウォッチリスト"])
 
     with main_tab:
-        # 現在の通貨状態に基づいて一度だけページを描画
         current_currency = st.session_state.currency
         current_rate = usd_rate if current_currency == 'usd' else 1.0
         render_portfolio_page(transactions_df, market_data, currency=current_currency, rate=current_rate)
 
     with watchlist_tab:
-        # ウォッチリストは従来通りJPY/USDタブで切り替え
         jpy_watchlist_tab, usd_watchlist_tab = st.tabs(["JPY", "USD"])
         with jpy_watchlist_tab:
             render_watchlist_tab(market_data, currency='jpy', rate=1.0)
