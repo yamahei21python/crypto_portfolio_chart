@@ -55,7 +55,6 @@ COLUMN_NAME_MAP_JA = {
 
 # --- アプリケーションUI関連 ---
 CURRENCY_SYMBOLS = {'jpy': '¥', 'usd': '$'}
-COIN_EMOJIS = {"Bitcoin": "₿", "Ethereum": "♦️", "Solana": "☀️", "XRP": "涟", "BNB": "🔶", "Dogecoin": "🐶", "Cardano": "C"}
 
 # 資産の増減を判定するための登録種別
 TRANSACTION_TYPES_BUY = ['購入', '調整（増）']
@@ -484,13 +483,11 @@ def display_asset_list_new(summary_df: pd.DataFrame, currency: str, rate: float)
             value_display = f"{symbol}{row['評価額_jpy'] * rate:,.2f}"
             price_display = f"{symbol}{price_per_unit:,.2f}"
 
-        emoji = COIN_EMOJIS.get(row['コイン名'], '🪙')
-
         html_parts = [
             '<div style="background-color: #1E1E1E; border: 1px solid #444444; border-radius: 10px; padding: 15px 20px; margin-bottom: 12px;">',
                 '<div style="display: grid; grid-template-columns: 2fr 3fr 5fr; align-items: center; gap: 10px;">',
                     '<div>',
-                        f'<p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; padding: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #FFFFFF;">{emoji} {row["symbol"].upper()}</p>',
+                        f'<p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; padding: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #FFFFFF;">{row["symbol"].upper()}</p>',
                         f'<p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #9E9E9E; margin: 0; padding: 0;">{row["アカウント数"]} 取引所</p>',
                     '</div>',
                     '<div style="text-align: right;">',
@@ -621,7 +618,7 @@ def _render_edit_form(transactions_df: pd.DataFrame, currency: str):
                 if new_ex != original_row['取引所']: updates['exchange'] = new_ex
                 
                 if updates:
-                    if update_transaction_in_bq(original_row, updates):
+                    if update_transaction_in_bq(original_transaction, updates):
                         st.toast("履歴を更新しました。", icon="✅")
                         del st.session_state['edit_transaction_data']
                         st.rerun()
