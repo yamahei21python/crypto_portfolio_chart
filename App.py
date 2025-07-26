@@ -441,18 +441,22 @@ def display_asset_list_new(summary_df: pd.DataFrame, currency: str, rate: float)
 
         emoji = COIN_EMOJIS.get(row['コイン名'], '🪙')
 
-        # --- HTMLを一行の文字列として生成 ---
+        # --- HTMLを一行の文字列として生成 (grid-template-columns を修正) ---
         html_parts = [
             '<div style="border: 1px solid #31333F; border-radius: 10px; padding: 15px 20px; margin-bottom: 12px;">',
-                '<div style="display: grid; grid-template-columns: minmax(100px, 1.5fr) 1.2fr 1.5fr; align-items: center; gap: 10px;">',
+                # ここを 2fr 3fr 5fr (20%, 30%, 50%) に変更
+                '<div style="display: grid; grid-template-columns: 2fr 3fr 5fr; align-items: center; gap: 10px;">',
+                    # 左列: 20%
                     '<div>',
                         f'<p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; padding: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{emoji} {row["symbol"].upper()}</p>',
                         f'<p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #808495; margin: 0; padding: 0;">{row["アカウント数"]} 取引所</p>',
                     '</div>',
+                    # 中央列: 30%
                     '<div style="text-align: right;">',
                         f'<p style="font-size: clamp(0.9em, 2.2vw, 1em); font-weight: 500; margin: 0; padding: 0; white-space: nowrap;">{quantity_display}</p>',
                         f'<p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #808495; margin: 0; padding: 0; white-space: nowrap;">{price_display}</p>',
                     '</div>',
+                    # 右列: 50%
                     '<div style="text-align: right;">',
                         f'<p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; padding: 0; white-space: nowrap;">{value_display}</p>',
                         f'<p style="font-size: clamp(0.8em, 2vw, 0.9em); color: {change_color}; margin: 0; padding: 0; white-space: nowrap;">{change_sign} {change_display}</p>',
