@@ -615,7 +615,7 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
             st.rerun()
         
         # ★★★ ここから修正 ★★★
-        # 通貨切替ボタン
+        # 通貨切替ボタンのラベルを定義
         if currency == 'jpy':
             button_label = "USD"
             new_currency = 'usd'
@@ -623,8 +623,15 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
             button_label = "JPY"
             new_currency = 'jpy'
 
-        if st.button(button_label, key=f"currency_toggle_{currency}"):
+        # 通貨切替ボタン
+        if st.button(button_label, key=f"currency_toggle_main_{currency}"):
             st.session_state.currency = new_currency
+            st.rerun()
+            
+        # データ更新ボタン
+        if st.button("🔄", key=f"refresh_data_{currency}", help="市場価格を更新"):
+            st.cache_data.clear()
+            st.toast("最新の市場データに更新しました。", icon="🔄")
             st.rerun()
     # ★★★ ここまで修正 ★★★
 
@@ -680,15 +687,9 @@ def main():
     if 'currency' not in st.session_state:
         st.session_state.currency = 'jpy'
 
-    col1, col2 = st.columns([0.8, 0.2])
-    with col1:
-        st.title("ポートフォリオ")
-    with col2:
-        st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
-        if st.button("🔄 データ更新", use_container_width=True, help="市場価格や為替レートを最新の情報に更新します。"):
-            st.cache_data.clear()
-            st.toast("最新の市場データに更新しました。", icon="🔄")
-            st.rerun()
+    # ★★★ ここを修正 ★★★
+    # タイトルのみ表示
+    st.title("ポートフォリオ")
 
     st.markdown(RIGHT_ALIGN_STYLE, unsafe_allow_html=True)
     if not bq_client:
