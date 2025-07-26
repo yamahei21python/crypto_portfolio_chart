@@ -425,25 +425,23 @@ def display_asset_list_new(summary_df: pd.DataFrame, currency: str, rate: float)
         return
 
     for i, row in summary_df.iterrows():
-        # 表示用データを準備
+        # --- 一般的な市場データ（常に表示）---
+        change_pct = row['price_change_percentage_24h']
+        change_color = "#00BFA5" if change_pct >= 0 else "#FF5252"
+        change_sign = "▲" if change_pct >= 0 else "▼"
+        change_display = f"{abs(change_pct):.2f}%"
+        
+        price_per_unit = row['評価額_jpy']/row['保有数量'] * rate
+        price_display = f"{symbol}{price_per_unit:,.2f}"
+
+        # --- ユーザー固有のデータ（表示/非表示を切り替え）---
         if is_hidden:
             quantity_display = "*****"
-            price_display = f"{symbol}*****"
             value_display = f"{symbol}*****"
-            change_display = "**.**%"
-            change_color = "#888"
-            change_sign = ""
         else:
             quantity_display = f"{row['保有数量']:,.8f}".rstrip('0').rstrip('.')
-            price_per_unit = row['評価額_jpy']/row['保有数量'] * rate
-            price_display = f"{symbol}{price_per_unit:,.2f}"
             total_value = row['評価額_jpy'] * rate
             value_display = f"{symbol}{total_value:,.2f}"
-            
-            change_pct = row['price_change_percentage_24h']
-            change_color = "#00BFA5" if change_pct >= 0 else "#FF5252"
-            change_sign = "▲" if change_pct >= 0 else "▼"
-            change_display = f"{abs(change_pct):.2f}%"
 
         col1, col2, col3 = st.columns([2, 2.2, 2])
         
