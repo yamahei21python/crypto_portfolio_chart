@@ -18,13 +18,12 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.express as px
 from pycoingecko import CoinGeckoAPI
 from datetime import datetime, timezone
 from google.cloud import bigquery
 from google.oauth2 import service_account
 import google.api_core.exceptions
-from typing import Dict, Any, Tuple, TypedDict
+from typing import Dict, Any, Tuple
 
 # === 2. 定数・グローバル設定 ===
 # --- BigQuery関連 ---
@@ -33,7 +32,6 @@ DATASET_ID = "coinalyze_data"
 TABLE_ID = "transactions"
 TABLE_FULL_ID = f"{PROJECT_ID}.{DATASET_ID}.{TABLE_ID}"
 
-# BigQueryテーブルスキーマ定義 (内部的な列名は変更しないこと)
 BIGQUERY_SCHEMA = [
     bigquery.SchemaField("transaction_date", "TIMESTAMP", mode="REQUIRED"),
     bigquery.SchemaField("coin_id", "STRING", mode="REQUIRED"),
@@ -46,7 +44,6 @@ BIGQUERY_SCHEMA = [
     bigquery.SchemaField("total_jpy", "FLOAT64", mode="REQUIRED"),
 ]
 
-# DataFrame表示用の列名マッピング（日本語UI用）
 COLUMN_NAME_MAP_JA = {
     'transaction_date': '登録日', 'coin_name': 'コイン名', 'exchange': '取引所',
     'transaction_type': '登録種別', 'quantity': '数量', 'price_jpy': '価格(JPY)',
@@ -55,15 +52,9 @@ COLUMN_NAME_MAP_JA = {
 
 # --- アプリケーションUI関連 ---
 CURRENCY_SYMBOLS = {'jpy': '¥', 'usd': '$'}
-
-# 資産の増減を判定するための登録種別
 TRANSACTION_TYPES_BUY = ['購入', '調整（増）']
 TRANSACTION_TYPES_SELL = ['売却', '調整（減）']
-
-# 取引所の表示順
 EXCHANGES_ORDERED = ['SBIVC', 'BITPOINT', 'Binance', 'bitbank', 'GMOコイン', 'Bybit']
-
-# ポートフォリオ円グラフ用の配色
 COIN_COLORS = {
     "Bitcoin": "#F7931A", "Ethereum": "#627EEA", "Solana": "#9945FF", "XRP": "#00AAE4",
     "Tether": "#50AF95", "BNB": "#F3BA2F", "USD Coin": "#2775CA", "Dogecoin": "#C3A634",
@@ -71,7 +62,6 @@ COIN_COLORS = {
 }
 
 # --- CSSスタイル ---
-# 全体を黒テーマにするためのカスタムCSS
 BLACK_THEME_CSS = """
 <style>
 /* --- 全体的な背景とテキスト色 --- */
@@ -115,11 +105,7 @@ button[data-baseweb="tab"][aria-selected="true"] {
 </style>
 """
 
-# === 3. 型定義 ===
-# (型定義は今回は変更なし)
-
-
-# === 4. 初期設定 & クライアント初期化 ===
+# === 3. 初期設定 & クライアント初期化 ===
 st.set_page_config(page_title="仮想通貨ポートフォリオ", page_icon="🪙", layout="wide")
 
 @st.cache_resource
@@ -136,8 +122,8 @@ def get_bigquery_client() -> bigquery.Client | None:
 cg_client = CoinGeckoAPI()
 bq_client = get_bigquery_client()
 
-# === 5. BigQuery 操作関数 ===
-# (このセクションの関数は変更なし)
+
+# === 4. BigQuery 操作関数 ===
 def init_bigquery_table():
     """BigQueryに取引履歴テーブルが存在しない場合、スキーマに基づき新規作成します。"""
     if not bq_client: return
@@ -240,17 +226,8 @@ def get_transactions_from_bq() -> pd.DataFrame:
     df['transaction_date'] = pd.to_datetime(df['transaction_date']).dt.tz_convert('Asia/Tokyo')
     return df.rename(columns=COLUMN_NAME_MAP_JA)
 
-def reset_bigquery_table():
-    """BigQueryテーブルの全データを削除します（TRUNCATE）。"""
-    if not bq_client: return
-    query = f"TRUNCATE TABLE {TABLE_FULL_ID}"
-    try:
-        bq_client.query(query).result()
-        st.success("すべての取引履歴がリセットされました。")
-    except Exception as e:
-        st.error(f"データベースのリセット中にエラーが発生しました: {e}")
 
-# === 6. API & データ処理関数 ===
+# === 5. API & データ処理関数 ===
 @st.cache_data(ttl=600)
 def get_market_data() -> pd.DataFrame:
     """CoinGecko APIから時価総額上位50銘柄の市場データを取得します。"""
@@ -327,7 +304,6 @@ def summarize_portfolio_by_coin(portfolio: Dict, market_data: pd.DataFrame) -> p
     summary['symbol'] = summary['symbol'].fillna('')
 
     summary = summary[summary['保有数量'] > 1e-9]
-
     return summary
 
 def summarize_portfolio_by_exchange(portfolio: Dict) -> pd.DataFrame:
@@ -349,10 +325,10 @@ def calculate_btc_value(total_asset_jpy: float, price_map: Dict[str, float]) -> 
     btc_price_jpy = price_map.get('bitcoin', 0)
     return total_asset_jpy / btc_price_jpy if btc_price_jpy > 0 else 0.0
 
-# === 7. UIコンポーネント関数 ===
+
+# === 6. UIコンポーネント関数 ===
 def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_change_24h_jpy: float, currency: str, rate: float):
-    """画像上部のサマリーカードを模したUIを表示します。"""
-    
+    """サマリーカードを動的な背景色で表示します。"""
     is_hidden = st.session_state.get('balance_hidden', False)
     
     if is_hidden:
@@ -367,7 +343,6 @@ def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_c
         yesterday_asset = total_asset_jpy - total_change_24h_jpy
         change_pct = (total_change_24h_jpy / yesterday_asset * 100) if yesterday_asset > 0 else 0
         symbol = CURRENCY_SYMBOLS[currency]
-        
         is_positive = total_change_24h_jpy >= 0
         
         if is_positive:
@@ -378,7 +353,6 @@ def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_c
             card_bottom_bg = "#E54A4A"
             
         change_text_color = "#FFFFFF"
-
         change_sign = "+" if is_positive else ""
         pct_sign = "+" if is_positive else ""
 
@@ -389,7 +363,7 @@ def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_c
 
     html_parts = [
         '<div style="border-radius: 10px; overflow: hidden; font-family: sans-serif;">',
-            f'<div style="padding: 20px 20px 20px 20px; background-color: {card_top_bg};">',
+            f'<div style="padding: 20px; background-color: {card_top_bg};">',
                 '<p style="font-size: 0.9em; margin: 0; padding: 0; color: #FFFFFF; opacity: 0.8;">残高</p>',
                 f'<p style="font-size: clamp(1.6em, 5vw, 2.2em); font-weight: bold; margin: 0; padding: 0; line-height: 1.2; white-space: nowrap; color: #FFFFFF;">{asset_display}</p>',
                 f'<p style="font-size: clamp(0.9em, 2.5vw, 1.1em); font-weight: 500; margin-top: 5px; color: #FFFFFF; opacity: 0.9; white-space: nowrap;">{btc_display}</p>',
@@ -412,7 +386,7 @@ def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_c
     st.markdown(card_html, unsafe_allow_html=True)
 
 def display_composition_bar(summary_df: pd.DataFrame):
-    """資産構成を水平の積み上げ棒グラフで表示します。"""
+    """資産構成バーと凡例を表示します。"""
     if summary_df.empty: return
 
     total_value = summary_df['評価額_jpy'].sum()
@@ -433,10 +407,8 @@ def display_composition_bar(summary_df: pd.DataFrame):
     legend_parts = [
         '<div style="display: flex; flex-wrap: nowrap; gap: 15px; overflow-x: auto; padding-bottom: 5px;">'
     ]
-
     for _, row in display_df.iterrows():
         display_text = row['symbol'].upper() if row['コイン名'] != 'その他' else 'その他'
-        
         item_html = (
             '<div style="display: flex; align-items: center; flex-shrink: 0;">'
             f'<div style="width: 12px; height: 12px; background-color: {row["color"]}; border-radius: 3px; margin-right: 5px;"></div>'
@@ -444,7 +416,6 @@ def display_composition_bar(summary_df: pd.DataFrame):
             '</div>'
         )
         legend_parts.append(item_html)
-
     legend_parts.append('</div>')
     legend_html = "".join(legend_parts)
     st.markdown(legend_html, unsafe_allow_html=True)
@@ -453,11 +424,10 @@ def display_composition_bar(summary_df: pd.DataFrame):
     for _, row in display_df.iterrows():
         bar_html += f'<div style="width: {row["percentage"]}%; background-color: {row["color"]};"></div>'
     bar_html += '</div>'
-
     st.markdown(bar_html, unsafe_allow_html=True)
 
 def display_asset_list_new(summary_df: pd.DataFrame, currency: str, rate: float):
-    """保有資産をレスポンシブなカード形式で表示します。"""
+    """保有資産をカード形式で表示します。"""
     st.subheader("保有資産")
     symbol = CURRENCY_SYMBOLS[currency]
     is_hidden = st.session_state.get('balance_hidden', False)
@@ -471,13 +441,10 @@ def display_asset_list_new(summary_df: pd.DataFrame, currency: str, rate: float)
         change_color = "#99FF99" if change_pct >= 0 else "#FF9999"
         change_sign = "▲" if change_pct >= 0 else "▼"
         change_display = f"{abs(change_pct):.2f}%"
-        
         price_per_unit = (row['評価額_jpy'] / row['保有数量']) * rate if row['保有数量'] > 0 else 0
         
         if is_hidden:
-            quantity_display = "*****"
-            value_display = f"{symbol}*****"
-            price_display = f"{symbol}*****"
+            quantity_display, value_display, price_display = "*****", f"{symbol}*****", f"{symbol}*****"
         else:
             quantity_display = f"{row['保有数量']:,.8f}".rstrip('0').rstrip('.')
             value_display = f"{symbol}{row['評価額_jpy'] * rate:,.2f}"
@@ -504,9 +471,8 @@ def display_asset_list_new(summary_df: pd.DataFrame, currency: str, rate: float)
         card_html = "".join(html_parts)
         st.markdown(card_html, unsafe_allow_html=True)
 
-
 def display_exchange_list(summary_exchange_df: pd.DataFrame, currency: str, rate: float):
-    """取引所別資産をレスポンシブなカード形式で表示します。"""
+    """取引所別資産をカード形式で表示します。"""
     st.subheader("取引所別資産")
     symbol = CURRENCY_SYMBOLS[currency]
     is_hidden = st.session_state.get('balance_hidden', False)
@@ -633,7 +599,7 @@ def _render_edit_form(transactions_df: pd.DataFrame, currency: str):
     st.markdown("---")
 
 
-# === 8. ページ描画関数 ===
+# === 7. ページ描画関数 ===
 def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFrame, currency: str, rate: float):
     """ポートフォリオページの全コンポーネントを描画します。"""
     price_map = market_data.set_index('id')['price_jpy'].to_dict()
@@ -655,12 +621,7 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
             st.session_state.balance_hidden = not st.session_state.get('balance_hidden', False)
             st.rerun()
         
-        if currency == 'jpy':
-            button_label = "USD"
-            new_currency = 'usd'
-        else:
-            button_label = "JPY"
-            new_currency = 'jpy'
+        button_label, new_currency = ("USD", "usd") if currency == 'jpy' else ("JPY", "jpy")
 
         if st.button(button_label, key=f"currency_toggle_main_{currency}"):
             st.session_state.currency = new_currency
@@ -710,7 +671,8 @@ def render_watchlist_tab(market_data: pd.DataFrame, currency: str, rate: float):
     )
     st.markdown('</div>', unsafe_allow_html=True)
 
-# === 9. メイン処理 ===
+
+# === 8. メイン処理 ===
 def main():
     """アプリケーションのメインエントリポイント。"""
     st.markdown(BLACK_THEME_CSS, unsafe_allow_html=True)
