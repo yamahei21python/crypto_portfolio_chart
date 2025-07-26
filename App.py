@@ -594,7 +594,7 @@ def _render_edit_form(transactions_df: pd.DataFrame, currency: str):
 
 def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFrame, currency: str, rate: float):
     """ポートフォリオページの全コンポーネントを描画します。"""
-    # データを準備
+    # ... (データ準備部分は変更なし) ...
     price_map = market_data.set_index('id')['price_jpy'].to_dict()
     price_change_map = market_data.set_index('id')['price_change_24h_jpy'].to_dict()
     name_map = market_data.set_index('id')['name'].to_dict()
@@ -608,64 +608,68 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
     # ★★★ ここから修正 ★★★
 
     # 1. 小さい画面でもst.columnsを横並びに維持するためのカスタムCSSを定義
+    # セレクタをより具体的にし、ボタンコンテナもFlexboxで制御
     custom_css = """
     <style>
-    .no-stack-columns {
-        /* Streamlitが生成するst.columnsのコンテナをターゲット */
-        div[data-testid="stHorizontalBlock"] {
-            /* flexアイテム（カラム）が折り返されないようにする */
-            flex-wrap: nowrap;
-        }
+    /* st.columnsのラッパーをターゲット */
+    div[data-testid="stHorizontalBlock"] {
+        /* 幅が狭くなった時に縦積みになるのを防ぐ */
+        flex-wrap: nowrap !important;
     }
-
-    /* Streamlitがカラムを縦積みにする画面幅(640px)で、その挙動を上書きする */
-    @media (max-width: 640px) {
-        .no-stack-columns div[data-testid="stHorizontalBlock"] {
-            flex-direction: row !important;
-        }
+    
+    /* col2 内のボタンを横並びにするためのスタイル */
+    .button-row {
+        display: flex;
+        flex-direction: row; /* 横並びを強制 */
+        align-items: center;  /* 垂直方向中央揃え */
+        gap: 5px; /* ボタン間の隙間 */
+        margin-top: 25px; /* カードとの高さを調整 */
     }
     </style>
     """
-    # 2. CSSを注入
     st.markdown(custom_css, unsafe_allow_html=True)
     
-    # 3. カスタムクラスを持つdivでst.columnsをラップする
-    st.markdown('<div class="no-stack-columns">', unsafe_allow_html=True)
-
-    col1, col2 = st.columns([0.9, 0.1])
+    col1, col2 = st.columns([0.85, 0.15]) # 比率を少し調整
     with col1:
-        # この中身は変更なし
         display_summary_card(total_asset_jpy, total_asset_btc, total_change_jpy, currency, rate)
+
     with col2:
-        # この中身は変更なし
-        st.markdown("<div style='margin-top: 30px;'></div>", unsafe_allow_html=True)
-        if st.button("👁️", key=f"toggle_visibility_{currency}", help="残高の表示/非表示"):
-            st.session_state.balance_hidden = not st.session_state.get('balance_hidden', False)
-            st.rerun()
+        # ボタンをHTMLのdivで囲み、Flexboxを適用
+        st.markdown('<div class="button-row">', unsafe_allow_html=True)
         
-        if currency == 'jpy':
-            button_label = "USD"
-            new_currency = 'usd'
-        else:
-            button_label = "JPY"
-            new_currency = 'jpy'
+        # Streamlitのボタンをこのコンテナ内に配置
+        c1, c2, c3 = st.columns([1,1,1]) # ボタンを横に並べるための内部カラム
+        with c1:
+            if st.button("👁️", key=f"toggle_visibility_{currency}", help="残高の表示/非表示"):
+                st.session_state.balance_hidden = not st.session_state.get('balance_hidden', False)
+                st.rerun()
+        
+        with c2:
+            if currency == 'jpy':
+                button_label = "USD"
+                new_currency = 'usd'
+            else:
+                button_label = "JPY"
+                new_currency = 'jpy'
 
-        if st.button(button_label, key=f"currency_toggle_main_{currency}"):
-            st.session_state.currency = new_currency
-            st.rerun()
-            
-        if st.button("🔄", key=f"refresh_data_{currency}", help="市場価格を更新"):
-            st.cache_data.clear()
-            st.toast("最新の市場データに更新しました。", icon="🔄")
-            st.rerun()
+            if st.button(button_label, key=f"currency_toggle_main_{currency}"):
+                st.session_state.currency = new_currency
+                st.rerun()
+        
+        with c3:
+            if st.button("🔄", key=f"refresh_data_{currency}", help="市場価格を更新"):
+                st.cache_data.clear()
+                st.toast("最新の市場データに更新しました。", icon="🔄")
+                st.rerun()
+                
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    # 4. ラッパーdivを閉じる
-    st.markdown('</div>', unsafe_allow_html=True)
 
     # ★★★ ここまで修正 ★★★
 
     st.divider()
 
+    # ... (以降のタブ表示部分は変更なし) ...
     tab_coin, tab_exchange, tab_history = st.tabs(["コイン", "取引所", "履歴"])
     
     with tab_coin:
@@ -677,20 +681,6 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
         display_exchange_list(summary_exchange_df, currency, rate)
 
     with tab_history:
-        display_transaction_history(transactions_df, currency=currency)
-        st.markdown("---")
-        display_add_transaction_form(coin_options, name_map, currency=currency)
-    
-    with tab_coin:
-        display_composition_bar(summary_df)
-        st.markdown("<br>", unsafe_allow_html=True) # 見た目のためのスペース
-        display_asset_list_new(summary_df, currency, rate)
-    
-    with tab_exchange:
-        display_exchange_list(summary_exchange_df, currency, rate)
-
-    with tab_history:
-        # キーが重複しないように、現在のページの通貨を渡す
         display_transaction_history(transactions_df, currency=currency)
         st.markdown("---")
         display_add_transaction_form(coin_options, name_map, currency=currency)
