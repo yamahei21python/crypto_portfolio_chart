@@ -86,7 +86,6 @@ body, .main, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
 h1, h2, h3, h4, h5, h6 {
     color: #FFFFFF;
 }
-
 /* --- Streamlitウィジェットの調整 --- */
 /* タブ */
 [data-testid="stTabs"] {
@@ -99,7 +98,6 @@ button[data-baseweb="tab"][aria-selected="true"] {
     color: #FFFFFF;
     border-bottom: 2px solid #FFFFFF;
 }
-
 /* DataFrameのヘッダー */
 [data-testid="stDataFrame"] thead th {
     background-color: #1E1E1E;
@@ -110,11 +108,30 @@ button[data-baseweb="tab"][aria-selected="true"] {
     text-align: right !important;
     justify-content: flex-end !important;
 }
-
 /* --- カスタムコンポーネントの色調整 --- */
 /* 履歴の枠線 */
 [data-testid="stVerticalBlock"] > [data-testid="stVerticalBlock"] {
     border: 1px solid #444444 !important;
+}
+/* --- トップ操作ボタンのスタイル --- */
+.top-controls .stButton > button {
+    width: 36px;  /* アイコンサイズを調整 (60%程度) */
+    height: 36px;
+    padding: 0;
+    border-radius: 50%; /* 円形にする */
+    border: 1px solid #444444;
+    background-color: transparent;
+    color: #E0E0E0;
+    font-size: 16px; /* アイコン自体のサイズ */
+    transition: all 0.2s;
+}
+.top-controls .stButton > button:hover {
+    border-color: #FFFFFF;
+    color: #FFFFFF;
+    transform: scale(1.1);
+}
+.top-controls .stButton > button:active {
+    transform: scale(0.95);
 }
 </style>
 """
@@ -359,13 +376,11 @@ def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_c
     
     is_hidden = st.session_state.get('balance_hidden', False)
     
-    # --- 表示用データの準備 ---
     if is_hidden:
         asset_display = f"{CURRENCY_SYMBOLS[currency]} *******"
         btc_display = "≈ ***** BTC"
         change_display = "*****"
         pct_display = "**.**%"
-        # 非表示時はニュートラルな色
         card_top_bg = "#1E1E1E"
         card_bottom_bg = "#2A2A2A"
         change_text_color = "#9E9E9E"
@@ -376,17 +391,13 @@ def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_c
         
         is_positive = total_change_24h_jpy >= 0
         
-        # --- 色の決定 (より明るい色に変更) ---
         if is_positive:
-            # プラスの場合の背景色 (明るい緑系)
-            card_top_bg = "#16B583" # メインの緑
-            card_bottom_bg = "#129B72" # 少し暗い緑
+            card_top_bg = "#16B583"
+            card_bottom_bg = "#129B72"
         else:
-            # マイナスの場合の背景色 (明るい赤系)
-            card_top_bg = "#FF5252" # メインの赤
-            card_bottom_bg = "#E54A4A" # 少し暗い赤
+            card_top_bg = "#FF5252"
+            card_bottom_bg = "#E54A4A"
             
-        # 変動額・変動率の文字色は常に白
         change_text_color = "#FFFFFF"
 
         change_sign = "+" if is_positive else ""
@@ -397,27 +408,21 @@ def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_c
         change_display = f"{change_sign}{(total_change_24h_jpy * rate):,.2f} {currency.upper()}"
         pct_display = f"{pct_sign}{change_pct:.2f}%"
 
-    # --- HTMLを一行の文字列として生成 ---
     html_parts = [
-        # カード全体のコンテナ
         '<div style="border-radius: 10px; overflow: hidden; font-family: sans-serif;">',
-            # 上段：動的な背景色
             f'<div style="padding: 20px 20px 20px 20px; background-color: {card_top_bg};">',
                 '<p style="font-size: 0.9em; margin: 0; padding: 0; color: #FFFFFF; opacity: 0.8;">残高</p>',
                 f'<p style="font-size: clamp(1.6em, 5vw, 2.2em); font-weight: bold; margin: 0; padding: 0; line-height: 1.2; white-space: nowrap; color: #FFFFFF;">{asset_display}</p>',
                 f'<p style="font-size: clamp(0.9em, 2.5vw, 1.1em); font-weight: 500; margin-top: 5px; color: #FFFFFF; opacity: 0.9; white-space: nowrap;">{btc_display}</p>',
             '</div>',
-            # 下段：動的な背景色（上段より少し暗め）
             f'<div style="padding: 15px 20px; background-color: {card_bottom_bg};">',
                 '<div style="display: flex; align-items: start;">',
                     '<div style="flex-basis: 50%; min-width: 0;">',
                         '<p style="font-size: 0.9em; margin: 0; padding: 0; color: #FFFFFF; opacity: 0.8;">24h 変動額</p>',
-                        # 変動額の文字色は常にchange_text_color (白)
                         f'<p style="font-size: clamp(1em, 3vw, 1.2em); font-weight: 600; margin-top: 5px; color: {change_text_color}; white-space: nowrap;">{change_display}</p>',
                     '</div>',
                     '<div style="flex-basis: 50%; min-width: 0;">',
                         '<p style="font-size: 0.9em; margin: 0; padding: 0; color: #FFFFFF; opacity: 0.8;">24h 変動率</p>',
-                        # 変動率の文字色は常にchange_text_color (白)
                         f'<p style="font-size: clamp(1em, 3vw, 1.2em); font-weight: 600; margin-top: 5px; color: {change_text_color}; white-space: nowrap;">{pct_display}</p>',
                     '</div>',
                 '</div>',
@@ -664,15 +669,15 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
     summary_df = summarize_portfolio_by_coin(portfolio, market_data)
     summary_exchange_df = summarize_portfolio_by_exchange(portfolio)
 
-    col1, col2 = st.columns([0.9, 0.1])
-    with col1:
-        display_summary_card(total_asset_jpy, total_asset_btc, total_change_jpy, currency, rate)
-    with col2:
-        st.markdown("<div style='margin-top: 30px;'></div>", unsafe_allow_html=True)
+    st.markdown('<div class="top-controls">', unsafe_allow_html=True)
+    _, btn1_col, btn2_col, btn3_col = st.columns([10, 1, 1, 1])
+
+    with btn1_col:
         if st.button("👁️", key=f"toggle_visibility_{currency}", help="残高の表示/非表示"):
             st.session_state.balance_hidden = not st.session_state.get('balance_hidden', False)
             st.rerun()
-        
+    
+    with btn2_col:
         if currency == 'jpy':
             button_label = "USD"
             new_currency = 'usd'
@@ -683,11 +688,15 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
         if st.button(button_label, key=f"currency_toggle_main_{currency}"):
             st.session_state.currency = new_currency
             st.rerun()
-            
+    
+    with btn3_col:
         if st.button("🔄", key=f"refresh_data_{currency}", help="市場価格を更新"):
             st.cache_data.clear()
             st.toast("最新の市場データに更新しました。", icon="🔄")
             st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    display_summary_card(total_asset_jpy, total_asset_btc, total_change_jpy, currency, rate)
     
     st.divider()
 
