@@ -376,15 +376,15 @@ def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_c
         
         is_positive = total_change_24h_jpy >= 0
         
-        # --- 色の決定 ---
+        # --- 色の決定 (より明るい色に変更) ---
         if is_positive:
-            # プラスの場合の背景色 (緑系)
-            card_top_bg = "#1A4D3B"
-            card_bottom_bg = "#11382A"
+            # プラスの場合の背景色 (明るい緑系)
+            card_top_bg = "#00BFA5" # メインの緑
+            card_bottom_bg = "#00A38D" # 少し暗い緑
         else:
-            # マイナスの場合の背景色 (赤系)
-            card_top_bg = "#5C2E2E"
-            card_bottom_bg = "#442222"
+            # マイナスの場合の背景色 (明るい赤系)
+            card_top_bg = "#FF5252" # メインの赤
+            card_bottom_bg = "#E54A4A" # 少し暗い赤
             
         # 変動額・変動率の文字色は常に白
         change_text_color = "#FFFFFF"
@@ -403,20 +403,20 @@ def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_c
         '<div style="border-radius: 10px; overflow: hidden; font-family: sans-serif;">',
             # 上段：動的な背景色
             f'<div style="padding: 20px 20px 20px 20px; background-color: {card_top_bg};">',
-                '<p style="font-size: 0.9em; margin: 0; padding: 0; color: #E0E0E0;">残高</p>',
+                '<p style="font-size: 0.9em; margin: 0; padding: 0; color: #FFFFFF; opacity: 0.8;">残高</p>',
                 f'<p style="font-size: clamp(1.6em, 5vw, 2.2em); font-weight: bold; margin: 0; padding: 0; line-height: 1.2; white-space: nowrap; color: #FFFFFF;">{asset_display}</p>',
-                f'<p style="font-size: clamp(0.9em, 2.5vw, 1.1em); font-weight: 500; margin-top: 5px; color: #E0E0E0; white-space: nowrap;">{btc_display}</p>',
+                f'<p style="font-size: clamp(0.9em, 2.5vw, 1.1em); font-weight: 500; margin-top: 5px; color: #FFFFFF; opacity: 0.9; white-space: nowrap;">{btc_display}</p>',
             '</div>',
             # 下段：動的な背景色（上段より少し暗め）
             f'<div style="padding: 15px 20px; background-color: {card_bottom_bg};">',
                 '<div style="display: flex; align-items: start;">',
                     '<div style="flex-basis: 50%; min-width: 0;">',
-                        '<p style="font-size: 0.9em; margin: 0; padding: 0; color: #E0E0E0;">24h 変動額</p>',
+                        '<p style="font-size: 0.9em; margin: 0; padding: 0; color: #FFFFFF; opacity: 0.8;">24h 変動額</p>',
                         # 変動額の文字色は常にchange_text_color (白)
                         f'<p style="font-size: clamp(1em, 3vw, 1.2em); font-weight: 600; margin-top: 5px; color: {change_text_color}; white-space: nowrap;">{change_display}</p>',
                     '</div>',
                     '<div style="flex-basis: 50%; min-width: 0;">',
-                        '<p style="font-size: 0.9em; margin: 0; padding: 0; color: #E0E0E0;">24h 変動率</p>',
+                        '<p style="font-size: 0.9em; margin: 0; padding: 0; color: #FFFFFF; opacity: 0.8;">24h 変動率</p>',
                         # 変動率の文字色は常にchange_text_color (白)
                         f'<p style="font-size: clamp(1em, 3vw, 1.2em); font-weight: 600; margin-top: 5px; color: {change_text_color}; white-space: nowrap;">{pct_display}</p>',
                     '</div>',
