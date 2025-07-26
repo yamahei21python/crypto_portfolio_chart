@@ -322,11 +322,8 @@ def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_c
     dynamic_color = "#99FF99" if is_positive else "#FF9999" # 明るい緑と赤
 
     # HTMLとCSSで2段構成の緑色カードを表現
-    # (注) HTMLコメントはStreamlitのmarkdownパーサーで問題を起こすことがあるため削除しました
     card_html = f"""
     <div style="border-radius: 10px; overflow: hidden; font-family: sans-serif;">
-        
-        <!-- 上段: 総資産 -->
         <div style="padding: 20px; color: white; background-color: #1A594F;">
             <div style="display: flex; align-items: flex-start; justify-content: space-between;">
                 <div>
@@ -337,8 +334,6 @@ def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_c
                 <span style="font-size: 1.5em; font-weight: bold; color: #DCE5E4;">👁️</span>
             </div>
         </div>
-
-        <!-- 下段: 24時間変動 -->
         <div style="padding: 15px 20px; background-color: #247565;">
             <div style="display: flex; justify-content: space-between;">
                 <div style="flex-basis: 50%;">
