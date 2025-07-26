@@ -344,7 +344,7 @@ def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_c
         pct_display = f"{pct_sign}{change_pct:.2f}%"
 
     # --- HTMLカードの構築 (修正箇所) ---
-    # font-sizeをclamp()に変更し、レスポンシブに対応
+    # 下段のレイアウトをFlexboxからCSS Gridに変更し、より自然な配置を実現
     card_html = f"""
     <div style="border-radius: 10px; overflow: hidden; font-family: sans-serif;">
         <div style="padding: 20px 20px 20px 20px; color: white; background-color: #1A594F;">
@@ -353,15 +353,20 @@ def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_c
             <p style="font-size: clamp(0.9em, 2.5vw, 1.1em); font-weight: 500; margin-top: 5px; color: #DCE5E4; white-space: nowrap;">{btc_display}</p>
         </div>
         <div style="padding: 15px 20px; background-color: #247565;">
-            <div style="display: flex; justify-content: space-between; gap: 10px;">
-                <div style="flex-basis: 50%; min-width: 0;">
+            <div style="display: grid; grid-template-columns: 1fr auto; align-items: start;">
+                
+                <!-- 左側: 変動額 -->
+                <div>
                     <p style="font-size: 0.9em; margin: 0; padding: 0; color: #A7C5C1;">24h 変動額</p>
                     <p style="font-size: clamp(1em, 3vw, 1.2em); font-weight: 600; margin-top: 5px; color: {dynamic_color}; white-space: nowrap;">{change_display}</p>
                 </div>
-                <div style="flex-basis: 50%; min-width: 0; text-align: right;">
+
+                <!-- 右側: 変動率 -->
+                <div style="text-align: right;">
                     <p style="font-size: 0.9em; margin: 0; padding: 0; color: #A7C5C1;">24h 変動率</p>
                     <p style="font-size: clamp(1em, 3vw, 1.2em); font-weight: 600; margin-top: 5px; color: {dynamic_color}; white-space: nowrap;">{pct_display}</p>
                 </div>
+
             </div>
         </div>
     </div>
