@@ -318,26 +318,28 @@ def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_c
     is_positive = total_change_24h_jpy >= 0
     change_sign = "+" if is_positive else ""
     pct_sign = "+" if is_positive else ""
-    # ユーザーの指示通り、正なら緑、負なら赤に色分け。緑背景でも見やすいように明るめの色を選ぶ
-    dynamic_color = "#81C784" if is_positive else "#EF9A9A" # 明るい緑と赤
+    # 正なら緑、負なら赤に色分け。緑背景でも見やすいように明るめの色を選ぶ
+    dynamic_color = "#99FF99" if is_positive else "#FF9999" # 明るい緑と赤
 
     # HTMLとCSSで2段構成の緑色カードを表現
+    # (注) HTMLコメントはStreamlitのmarkdownパーサーで問題を起こすことがあるため削除しました
     card_html = f"""
-    <div style="background-color: #1A594F; border-radius: 10px; overflow: hidden; font-family: sans-serif;">
+    <div style="border-radius: 10px; overflow: hidden; font-family: sans-serif;">
+        
         <!-- 上段: 総資産 -->
-        <div style="padding: 20px; color: white;">
+        <div style="padding: 20px; color: white; background-color: #1A594F;">
             <div style="display: flex; align-items: flex-start; justify-content: space-between;">
                 <div>
                     <p style="font-size: 0.9em; margin: 0; padding: 0; color: #A7C5C1;">残高</p>
                     <p style="font-size: 2.2em; font-weight: bold; margin: 0; padding: 0; line-height: 1.2;">{total_asset_jpy:,.2f} JPY</p>
                     <p style="font-size: 1.1em; font-weight: 500; margin-top: 5px; color: #DCE5E4;">≈ {total_asset_btc:.8f} BTC</p>
                 </div>
-                <span style="font-size: 1.5em; font-weight: bold;">👁️</span>
+                <span style="font-size: 1.5em; font-weight: bold; color: #DCE5E4;">👁️</span>
             </div>
         </div>
 
         <!-- 下段: 24時間変動 -->
-        <div style="background-color: #247565; padding: 15px 20px;">
+        <div style="padding: 15px 20px; background-color: #247565;">
             <div style="display: flex; justify-content: space-between;">
                 <div style="flex-basis: 50%;">
                     <p style="font-size: 0.9em; margin: 0; padding: 0; color: #A7C5C1;">24h 変動額</p>
