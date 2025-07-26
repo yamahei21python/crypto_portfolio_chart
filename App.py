@@ -605,18 +605,44 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
     summary_df = summarize_portfolio_by_coin(portfolio, market_data)
     summary_exchange_df = summarize_portfolio_by_exchange(portfolio)
 
-    # UIコンポーネントを描画
+    # ★★★ ここから修正 ★★★
+
+    # 1. 小さい画面でもst.columnsを横並びに維持するためのカスタムCSSを定義
+    custom_css = """
+    <style>
+    .no-stack-columns {
+        /* Streamlitが生成するst.columnsのコンテナをターゲット */
+        div[data-testid="stHorizontalBlock"] {
+            /* flexアイテム（カラム）が折り返されないようにする */
+            flex-wrap: nowrap;
+        }
+    }
+
+    /* Streamlitがカラムを縦積みにする画面幅(640px)で、その挙動を上書きする */
+    @media (max-width: 640px) {
+        .no-stack-columns div[data-testid="stHorizontalBlock"] {
+            flex-direction: row !important;
+        }
+    }
+    </style>
+    """
+    # 2. CSSを注入
+    st.markdown(custom_css, unsafe_allow_html=True)
+    
+    # 3. カスタムクラスを持つdivでst.columnsをラップする
+    st.markdown('<div class="no-stack-columns">', unsafe_allow_html=True)
+
     col1, col2 = st.columns([0.9, 0.1])
     with col1:
+        # この中身は変更なし
         display_summary_card(total_asset_jpy, total_asset_btc, total_change_jpy, currency, rate)
     with col2:
+        # この中身は変更なし
         st.markdown("<div style='margin-top: 30px;'></div>", unsafe_allow_html=True)
         if st.button("👁️", key=f"toggle_visibility_{currency}", help="残高の表示/非表示"):
             st.session_state.balance_hidden = not st.session_state.get('balance_hidden', False)
             st.rerun()
         
-        # ★★★ ここから修正 ★★★
-        # 通貨切替ボタンのラベルを定義
         if currency == 'jpy':
             button_label = "USD"
             new_currency = 'usd'
@@ -624,21 +650,36 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
             button_label = "JPY"
             new_currency = 'jpy'
 
-        # 通貨切替ボタン
         if st.button(button_label, key=f"currency_toggle_main_{currency}"):
             st.session_state.currency = new_currency
             st.rerun()
             
-        # データ更新ボタン
         if st.button("🔄", key=f"refresh_data_{currency}", help="市場価格を更新"):
             st.cache_data.clear()
             st.toast("最新の市場データに更新しました。", icon="🔄")
             st.rerun()
+
+    # 4. ラッパーdivを閉じる
+    st.markdown('</div>', unsafe_allow_html=True)
+
     # ★★★ ここまで修正 ★★★
 
     st.divider()
 
     tab_coin, tab_exchange, tab_history = st.tabs(["コイン", "取引所", "履歴"])
+    
+    with tab_coin:
+        display_composition_bar(summary_df)
+        st.markdown("<br>", unsafe_allow_html=True) 
+        display_asset_list_new(summary_df, currency, rate)
+    
+    with tab_exchange:
+        display_exchange_list(summary_exchange_df, currency, rate)
+
+    with tab_history:
+        display_transaction_history(transactions_df, currency=currency)
+        st.markdown("---")
+        display_add_transaction_form(coin_options, name_map, currency=currency)
     
     with tab_coin:
         display_composition_bar(summary_df)
