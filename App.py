@@ -607,63 +607,49 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
 
     # ★★★ ここから修正 ★★★
 
-    # 1. 小さい画面でもst.columnsを横並びに維持するためのカスタムCSSを定義
-    # セレクタをより具体的にし、ボタンコンテナもFlexboxで制御
+    # 1. 小さい画面でもst.columnsを横並びに維持するためのカスタムCSS
     custom_css = """
     <style>
-    /* st.columnsのラッパーをターゲット */
+    /* st.columnsのラッパー要素をターゲット */
     div[data-testid="stHorizontalBlock"] {
         /* 幅が狭くなった時に縦積みになるのを防ぐ */
         flex-wrap: nowrap !important;
-    }
-    
-    /* col2 内のボタンを横並びにするためのスタイル */
-    .button-row {
-        display: flex;
-        flex-direction: row; /* 横並びを強制 */
-        align-items: center;  /* 垂直方向中央揃え */
-        gap: 5px; /* ボタン間の隙間 */
-        margin-top: 25px; /* カードとの高さを調整 */
     }
     </style>
     """
     st.markdown(custom_css, unsafe_allow_html=True)
     
-    col1, col2 = st.columns([0.85, 0.15]) # 比率を少し調整
+    # 2. カラムを定義 (比率はお好みで調整)
+    col1, col2 = st.columns([0.85, 0.15]) 
+    
     with col1:
+        # 左側のカード表示
         display_summary_card(total_asset_jpy, total_asset_btc, total_change_jpy, currency, rate)
 
     with col2:
-        # ボタンをHTMLのdivで囲み、Flexboxを適用
-        st.markdown('<div class="button-row">', unsafe_allow_html=True)
-        
-        # Streamlitのボタンをこのコンテナ内に配置
-        c1, c2, c3 = st.columns([1,1,1]) # ボタンを横に並べるための内部カラム
-        with c1:
-            if st.button("👁️", key=f"toggle_visibility_{currency}", help="残高の表示/非表示"):
-                st.session_state.balance_hidden = not st.session_state.get('balance_hidden', False)
-                st.rerun()
-        
-        with c2:
-            if currency == 'jpy':
-                button_label = "USD"
-                new_currency = 'usd'
-            else:
-                button_label = "JPY"
-                new_currency = 'jpy'
+        # 3. 右側のボタンを縦に並べる
+        # col2の中に普通に配置するだけで縦に並びます
+        st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True) # 上からの高さを微調整
 
-            if st.button(button_label, key=f"currency_toggle_main_{currency}"):
-                st.session_state.currency = new_currency
-                st.rerun()
+        if st.button("👁️", key=f"toggle_visibility_{currency}", help="残高の表示/非表示", use_container_width=True):
+            st.session_state.balance_hidden = not st.session_state.get('balance_hidden', False)
+            st.rerun()
         
-        with c3:
-            if st.button("🔄", key=f"refresh_data_{currency}", help="市場価格を更新"):
-                st.cache_data.clear()
-                st.toast("最新の市場データに更新しました。", icon="🔄")
-                st.rerun()
-                
-        st.markdown('</div>', unsafe_allow_html=True)
+        if currency == 'jpy':
+            button_label = "USD"
+            new_currency = 'usd'
+        else:
+            button_label = "JPY"
+            new_currency = 'jpy'
 
+        if st.button(button_label, key=f"currency_toggle_main_{currency}", use_container_width=True):
+            st.session_state.currency = new_currency
+            st.rerun()
+        
+        if st.button("🔄", key=f"refresh_data_{currency}", help="市場価格を更新", use_container_width=True):
+            st.cache_data.clear()
+            st.toast("最新の市場データに更新しました。", icon="🔄")
+            st.rerun()
 
     # ★★★ ここまで修正 ★★★
 
