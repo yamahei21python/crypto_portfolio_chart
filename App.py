@@ -613,22 +613,22 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
         if st.button("👁️", key=f"toggle_visibility_{currency}", help="残高の表示/非表示"):
             st.session_state.balance_hidden = not st.session_state.get('balance_hidden', False)
             st.rerun()
-    
-    # ★★★ ここから修正 ★★★
-    # 通貨切替ボタン
-    if currency == 'jpy':
-        button_label = "USD"
-        new_currency = 'usd'
-    else:
-        button_label = "JPY"
-        new_currency = 'jpy'
+        
+        # ★★★ ここから修正 ★★★
+        # 通貨切替ボタン
+        if currency == 'jpy':
+            button_label = "USD"
+            new_currency = 'usd'
+        else:
+            button_label = "JPY"
+            new_currency = 'jpy'
 
-    if st.button(button_label, key="currency_toggle"):
-        st.session_state.currency = new_currency
-        st.rerun()
-    
-    st.divider()
+        if st.button(button_label, key=f"currency_toggle_{currency}"):
+            st.session_state.currency = new_currency
+            st.rerun()
     # ★★★ ここまで修正 ★★★
+
+    st.divider()
 
     tab_coin, tab_exchange, tab_history = st.tabs(["コイン", "取引所", "履歴"])
     
