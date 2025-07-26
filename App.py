@@ -383,8 +383,13 @@ def display_composition_bar(summary_df: pd.DataFrame):
             </div>
             """, unsafe_allow_html=True)
             
-    # プログレスバー (値を整数に変換してエラーを修正)
-    st.progress(display_df['percentage'].astype(int).to_list(), text=None)
+    # HTMLで積み上げ棒グラフを作成
+    bar_html = '<div style="display: flex; width: 100%; height: 12px; border-radius: 5px; overflow: hidden; margin-top: 10px;">'
+    for _, row in display_df.iterrows():
+        bar_html += f'<div style="width: {row["percentage"]}%; background-color: {row["color"]};"></div>'
+    bar_html += '</div>'
+
+    st.markdown(bar_html, unsafe_allow_html=True)
 
 def display_asset_list_new(summary_df: pd.DataFrame):
     """保有資産を画像に近いカスタムリスト形式で表示します。"""
