@@ -330,10 +330,10 @@ def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_c
     
     # --- 表示用データの準備 ---
     if is_hidden:
-        asset_display = "*****"
+        asset_display = f"{CURRENCY_SYMBOLS[currency]} *******"
         btc_display = "≈ ***** BTC"
         change_display = "*****"
-        pct_display = "+**.**%"
+        pct_display = "**.**%"
         dynamic_color = "#DCE5E4" # 非表示時はニュートラルな色
     else:
         yesterday_asset = total_asset_jpy - total_change_24h_jpy
@@ -418,16 +418,32 @@ def display_asset_list_new(summary_df: pd.DataFrame, currency: str, rate: float)
     """保有資産を画像に近いカスタムリスト形式で表示します。"""
     st.subheader("保有資産")
     symbol = CURRENCY_SYMBOLS[currency]
+    is_hidden = st.session_state.get('balance_hidden', False)
+
     if summary_df.empty:
         st.info("保有資産はありません。")
         return
 
     for i, row in summary_df.iterrows():
-        change_pct = row['price_change_percentage_24h']
-        color = "#00BFA5" if change_pct >= 0 else "#FF5252"
-        sign = "▲" if change_pct >= 0 else "▼"
-        price_per_unit = row['評価額_jpy']/row['保有数量'] * rate
-        total_value = row['評価額_jpy'] * rate
+        # 表示用データを準備
+        if is_hidden:
+            quantity_display = "*****"
+            price_display = f"{symbol}*****"
+            value_display = f"{symbol}*****"
+            change_display = "**.**%"
+            change_color = "#888"
+            change_sign = ""
+        else:
+            quantity_display = f"{row['保有数量']:,.8f}".rstrip('0').rstrip('.')
+            price_per_unit = row['評価額_jpy']/row['保有数量'] * rate
+            price_display = f"{symbol}{price_per_unit:,.2f}"
+            total_value = row['評価額_jpy'] * rate
+            value_display = f"{symbol}{total_value:,.2f}"
+            
+            change_pct = row['price_change_percentage_24h']
+            change_color = "#00BFA5" if change_pct >= 0 else "#FF5252"
+            change_sign = "▲" if change_pct >= 0 else "▼"
+            change_display = f"{abs(change_pct):.2f}%"
 
         col1, col2, col3 = st.columns([2, 2.2, 2])
         
@@ -436,11 +452,11 @@ def display_asset_list_new(summary_df: pd.DataFrame, currency: str, rate: float)
             st.markdown(f"**{emoji} {row['コイン名']}**")
             st.caption(f"{row['アカウント数']} アカウント")
         with col2:
-             st.markdown(f"<p style='text-align: right; font-size: 1.1em; font-weight: 500;'>{row['保有数量']:,.8f}".rstrip('0').rstrip('.')+"""</p>""", unsafe_allow_html=True)
-             st.markdown(f"<p style='text-align: right; color: #888;'>{symbol}{price_per_unit:,.2f}</p>", unsafe_allow_html=True)
+             st.markdown(f"<p style='text-align: right; font-size: 1.1em; font-weight: 500;'>{quantity_display}</p>", unsafe_allow_html=True)
+             st.markdown(f"<p style='text-align: right; color: #888;'>{price_display}</p>", unsafe_allow_html=True)
         with col3:
-            st.markdown(f"<p style='text-align: right; font-size: 1.1em; font-weight: bold;'>{symbol}{total_value:,.2f}</p>", unsafe_allow_html=True)
-            st.markdown(f"<p style='text-align: right; color: {color};'>{sign} {abs(change_pct):.2f}%</p>", unsafe_allow_html=True)
+            st.markdown(f"<p style='text-align: right; font-size: 1.1em; font-weight: bold;'>{value_display}</p>", unsafe_allow_html=True)
+            st.markdown(f"<p style='text-align: right; color: {change_color};'>{change_sign} {change_display}</p>", unsafe_allow_html=True)
         
         if i < len(summary_df) - 1:
             st.divider()
@@ -449,12 +465,20 @@ def display_exchange_list(summary_exchange_df: pd.DataFrame, currency: str, rate
     """取引所別資産をカスタムリスト形式で表示します。"""
     st.subheader("取引所別資産")
     symbol = CURRENCY_SYMBOLS[currency]
+    is_hidden = st.session_state.get('balance_hidden', False)
+
     if summary_exchange_df.empty:
         st.info("保有資産はありません。")
         return
 
     for i, row in summary_exchange_df.iterrows():
-        total_value = row['評価額_jpy'] * rate
+        # 表示用データを準備
+        if is_hidden:
+            value_display = f"{symbol}*****"
+        else:
+            total_value = row['評価額_jpy'] * rate
+            value_display = f"{symbol}{total_value:,.2f}"
+            
         col1, col2 = st.columns([1, 1])
         
         with col1:
@@ -462,7 +486,7 @@ def display_exchange_list(summary_exchange_df: pd.DataFrame, currency: str, rate
             st.caption(f"{row['コイン数']} 銘柄")
         
         with col2:
-            st.markdown(f"<p style='text-align: right; font-size: 1.1em; font-weight: bold;'>{symbol}{total_value:,.2f}</p>", unsafe_allow_html=True)
+            st.markdown(f"<p style='text-align: right; font-size: 1.1em; font-weight: bold;'>{value_display}</p>", unsafe_allow_html=True)
 
         if i < len(summary_exchange_df) - 1:
             st.divider()
@@ -583,8 +607,6 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
     summary_exchange_df = summarize_portfolio_by_exchange(portfolio)
 
     # UIコンポーネントを描画
-    # ★★★ ここを修正 ★★★
-    # カードの隣に表示/非表示ボタンを配置
     col1, col2 = st.columns([0.9, 0.1])
     with col1:
         display_summary_card(total_asset_jpy, total_asset_btc, total_change_jpy, currency, rate)
@@ -638,7 +660,6 @@ def render_watchlist_tab(market_data: pd.DataFrame, currency: str, rate: float):
 
 def main():
     """アプリケーションのメインエントリポイント。"""
-    # ★★★ ここを修正 ★★★
     # セッション状態で残高の表示/非表示を管理
     if 'balance_hidden' not in st.session_state:
         st.session_state.balance_hidden = False
