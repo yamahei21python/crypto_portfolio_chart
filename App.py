@@ -605,7 +605,7 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
     summary_exchange_df = summarize_portfolio_by_exchange(portfolio)
 
     # UIコンポーネントを描画
-    col1, col2 = st.columns([4, 1])
+    col1, col2 = st.columns([0.9, 0.1])
     with col1:
         display_summary_card(total_asset_jpy, total_asset_btc, total_change_jpy, currency, rate)
     with col2:
