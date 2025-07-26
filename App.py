@@ -617,10 +617,10 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
     # ★★★ ここから修正 ★★★
     # 通貨切替ボタン
     if currency == 'jpy':
-        button_label = "USDで表示"
+        button_label = "USD"
         new_currency = 'usd'
     else:
-        button_label = "JPYで表示"
+        button_label = "JPY"
         new_currency = 'jpy'
 
     if st.button(button_label, key="currency_toggle"):
@@ -680,8 +680,6 @@ def main():
     if 'currency' not in st.session_state:
         st.session_state.currency = 'jpy'
 
-    # ★★★ ここから修正 ★★★
-    # タイトルと更新ボタンのレイアウト
     col1, col2 = st.columns([0.8, 0.2])
     with col1:
         st.title("ポートフォリオ")
@@ -691,7 +689,6 @@ def main():
             st.cache_data.clear()
             st.toast("最新の市場データに更新しました。", icon="🔄")
             st.rerun()
-    # ★★★ ここまで修正 ★★★
 
     st.markdown(RIGHT_ALIGN_STYLE, unsafe_allow_html=True)
     if not bq_client:
@@ -706,8 +703,6 @@ def main():
     transactions_df = get_transactions_from_bq()
     usd_rate = get_exchange_rate('usd')
     
-    # ★★★ ここから修正 ★★★
-    # メインの表示ロジック
     main_tab, watchlist_tab = st.tabs(["ポートフォリオ", "ウォッチリスト"])
 
     with main_tab:
@@ -723,7 +718,6 @@ def main():
             render_watchlist_tab(market_data, currency='jpy', rate=1.0)
         with usd_watchlist_tab:
             render_watchlist_tab(market_data, currency='usd', rate=usd_rate)
-    # ★★★ ここまで修正 ★★★
 
 if __name__ == "__main__":
     main()
