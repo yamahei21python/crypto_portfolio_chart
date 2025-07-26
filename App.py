@@ -431,7 +431,7 @@ def display_asset_list_new(summary_df: pd.DataFrame, currency: str, rate: float)
         change_sign = "▲" if change_pct >= 0 else "▼"
         change_display = f"{abs(change_pct):.2f}%"
         
-        price_per_unit = row['評価額_jpy']/row['保有数量'] * rate
+        price_per_unit = (row['評価額_jpy']/row['保有数量']) * rate if row['保有数量'] > 0 else 0
         price_display = f"{symbol}{price_per_unit:,.2f}"
 
         # --- ユーザー固有のデータ（表示/非表示を切り替え）---
@@ -613,6 +613,22 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
         if st.button("👁️", key=f"toggle_visibility_{currency}", help="残高の表示/非表示"):
             st.session_state.balance_hidden = not st.session_state.get('balance_hidden', False)
             st.rerun()
+    
+    # ★★★ ここから修正 ★★★
+    # 通貨切替ボタン
+    if currency == 'jpy':
+        button_label = "USDで表示"
+        new_currency = 'usd'
+    else:
+        button_label = "JPYで表示"
+        new_currency = 'jpy'
+
+    if st.button(button_label, key="currency_toggle"):
+        st.session_state.currency = new_currency
+        st.rerun()
+    
+    st.divider()
+    # ★★★ ここまで修正 ★★★
 
     tab_coin, tab_exchange, tab_history = st.tabs(["コイン", "取引所", "履歴"])
     
@@ -658,11 +674,15 @@ def render_watchlist_tab(market_data: pd.DataFrame, currency: str, rate: float):
 
 def main():
     """アプリケーションのメインエントリポイント。"""
-    # セッション状態で残高の表示/非表示を管理
+    # セッション状態で管理する変数を初期化
     if 'balance_hidden' not in st.session_state:
         st.session_state.balance_hidden = False
+    if 'currency' not in st.session_state:
+        st.session_state.currency = 'jpy'
 
-    col1, _, col2 = st.columns([3, 5, 1.2])
+    # ★★★ ここから修正 ★★★
+    # タイトルと更新ボタンのレイアウト
+    col1, col2 = st.columns([0.8, 0.2])
     with col1:
         st.title("ポートフォリオ")
     with col2:
@@ -671,6 +691,7 @@ def main():
             st.cache_data.clear()
             st.toast("最新の市場データに更新しました。", icon="🔄")
             st.rerun()
+    # ★★★ ここまで修正 ★★★
 
     st.markdown(RIGHT_ALIGN_STYLE, unsafe_allow_html=True)
     if not bq_client:
@@ -685,21 +706,24 @@ def main():
     transactions_df = get_transactions_from_bq()
     usd_rate = get_exchange_rate('usd')
     
+    # ★★★ ここから修正 ★★★
+    # メインの表示ロジック
     main_tab, watchlist_tab = st.tabs(["ポートフォリオ", "ウォッチリスト"])
 
     with main_tab:
-        jpy_portfolio_tab, usd_portfolio_tab = st.tabs(["JPY", "USD"])
-        with jpy_portfolio_tab:
-            render_portfolio_page(transactions_df, market_data, currency='jpy', rate=1.0)
-        with usd_portfolio_tab:
-            render_portfolio_page(transactions_df, market_data, currency='usd', rate=usd_rate)
+        # 現在の通貨状態に基づいて一度だけページを描画
+        current_currency = st.session_state.currency
+        current_rate = usd_rate if current_currency == 'usd' else 1.0
+        render_portfolio_page(transactions_df, market_data, currency=current_currency, rate=current_rate)
 
     with watchlist_tab:
+        # ウォッチリストは従来通りJPY/USDタブで切り替え
         jpy_watchlist_tab, usd_watchlist_tab = st.tabs(["JPY", "USD"])
         with jpy_watchlist_tab:
             render_watchlist_tab(market_data, currency='jpy', rate=1.0)
         with usd_watchlist_tab:
             render_watchlist_tab(market_data, currency='usd', rate=usd_rate)
+    # ★★★ ここまで修正 ★★★
 
 if __name__ == "__main__":
     main()
