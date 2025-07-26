@@ -344,7 +344,7 @@ def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_c
         change_display = f"{change_sign}{(total_change_24h_jpy * rate):,.2f} {currency.upper()}"
         pct_display = f"{pct_sign}{change_pct:.2f}%"
 
-    # --- HTMLカードの構築 (gridレイアウトを適用し、インデント問題を解決) ---
+    # --- HTMLカードの構築 (50%/50%分割、両方左揃えに修正) ---
     card_html = textwrap.dedent(f"""
         <div style="border-radius: 10px; overflow: hidden; font-family: sans-serif;">
             <div style="padding: 20px 20px 20px 20px; color: white; background-color: #1A594F;">
@@ -353,12 +353,12 @@ def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_c
                 <p style="font-size: clamp(0.9em, 2.5vw, 1.1em); font-weight: 500; margin-top: 5px; color: #DCE5E4; white-space: nowrap;">{btc_display}</p>
             </div>
             <div style="padding: 15px 20px; background-color: #247565;">
-                <div style="display: grid; grid-template-columns: 1fr auto; align-items: start;">
-                    <div>
+                <div style="display: flex; align-items: start;">
+                    <div style="flex-basis: 50%; min-width: 0;">
                         <p style="font-size: 0.9em; margin: 0; padding: 0; color: #A7C5C1;">24h 変動額</p>
                         <p style="font-size: clamp(1em, 3vw, 1.2em); font-weight: 600; margin-top: 5px; color: {dynamic_color}; white-space: nowrap;">{change_display}</p>
                     </div>
-                    <div style="text-align: right;">
+                    <div style="flex-basis: 50%; min-width: 0;">
                         <p style="font-size: 0.9em; margin: 0; padding: 0; color: #A7C5C1;">24h 変動率</p>
                         <p style="font-size: clamp(1em, 3vw, 1.2em); font-weight: 600; margin-top: 5px; color: {dynamic_color}; white-space: nowrap;">{pct_display}</p>
                     </div>
