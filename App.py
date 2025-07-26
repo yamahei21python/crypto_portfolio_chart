@@ -354,11 +354,11 @@ def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_c
             </div>
             <div style="padding: 15px 20px; background-color: #247565;">
                 <div style="display: flex; align-items: start;">
-                    <div style="flex-basis: 50%; min-width: 0;">
+                    <div style="flex-basis: 60%; min-width: 0;">
                         <p style="font-size: 0.9em; margin: 0; padding: 0; color: #A7C5C1;">24h 変動額</p>
                         <p style="font-size: clamp(1em, 3vw, 1.2em); font-weight: 600; margin-top: 5px; color: {dynamic_color}; white-space: nowrap;">{change_display}</p>
                     </div>
-                    <div style="flex-basis: 50%; min-width: 0;">
+                    <div style="flex-basis: 40%; min-width: 0;">
                         <p style="font-size: 0.9em; margin: 0; padding: 0; color: #A7C5C1;">24h 変動率</p>
                         <p style="font-size: clamp(1em, 3vw, 1.2em); font-weight: 600; margin-top: 5px; color: {dynamic_color}; white-space: nowrap;">{pct_display}</p>
                     </div>
