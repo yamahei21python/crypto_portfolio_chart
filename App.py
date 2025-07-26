@@ -408,7 +408,7 @@ def display_composition_bar(summary_df: pd.DataFrame):
     st.markdown(bar_html, unsafe_allow_html=True)
 
 def display_asset_list_new(summary_df: pd.DataFrame, currency: str, rate: float):
-    """保有資産を画像に近いカスタムリスト形式で表示します。"""
+    """保有資産をレスポンシブなカード形式で表示します。"""
     st.subheader("保有資産")
     symbol = CURRENCY_SYMBOLS[currency]
     is_hidden = st.session_state.get('balance_hidden', False)
@@ -417,43 +417,57 @@ def display_asset_list_new(summary_df: pd.DataFrame, currency: str, rate: float)
         st.info("保有資産はありません。")
         return
 
-    for i, row in summary_df.iterrows():
-        # --- 一般的な市場データ（常に表示）---
-        change_pct = row['price_change_percentage_24h']
+    # 各資産をループしてカードを生成
+    for _, row in summary_df.iterrows():
+        # --- 表示用データの準備 ---
+        change_pct = row.get('price_change_percentage_24h', 0)
         change_color = "#00BFA5" if change_pct >= 0 else "#FF5252"
         change_sign = "▲" if change_pct >= 0 else "▼"
         change_display = f"{abs(change_pct):.2f}%"
         
-        price_per_unit = (row['評価額_jpy']/row['保有数量']) * rate if row['保有数量'] > 0 else 0
-        price_display = f"{symbol}{price_per_unit:,.2f}"
-
-        # --- ユーザー固有のデータ（表示/非表示を切り替え）---
+        price_per_unit = (row['評価額_jpy'] / row['保有数量']) * rate if row['保有数量'] > 0 else 0
+        
         if is_hidden:
             quantity_display = "*****"
             value_display = f"{symbol}*****"
+            price_display = f"{symbol}*****"
         else:
             quantity_display = f"{row['保有数量']:,.8f}".rstrip('0').rstrip('.')
-            total_value = row['評価額_jpy'] * rate
-            value_display = f"{symbol}{total_value:,.2f}"
+            value_display = f"{symbol}{row['評価額_jpy'] * rate:,.2f}"
+            price_display = f"{symbol}{price_per_unit:,.2f}"
 
-        col1, col2, col3 = st.columns([2, 2.2, 2])
-        
-        with col1:
-            emoji = COIN_EMOJIS.get(row['コイン名'], '🪙')
-            st.markdown(f"**{emoji} {row['コイン名']}**")
-            st.caption(f"{row['アカウント数']} アカウント")
-        with col2:
-             st.markdown(f"<p style='text-align: right; font-size: 1.1em; font-weight: 500;'>{quantity_display}</p>", unsafe_allow_html=True)
-             st.markdown(f"<p style='text-align: right; color: #888;'>{price_display}</p>", unsafe_allow_html=True)
-        with col3:
-            st.markdown(f"<p style='text-align: right; font-size: 1.1em; font-weight: bold;'>{value_display}</p>", unsafe_allow_html=True)
-            st.markdown(f"<p style='text-align: right; color: {change_color};'>{change_sign} {change_display}</p>", unsafe_allow_html=True)
-        
-        if i < len(summary_df) - 1:
-            st.divider()
+        emoji = COIN_EMOJIS.get(row['コイン名'], '🪙')
+
+        # --- HTMLカードの構築 ---
+        card_html = textwrap.dedent(f"""
+        <div style="border: 1px solid #31333F; border-radius: 10px; padding: 15px 20px; margin-bottom: 12px;">
+            <div style="display: grid; grid-template-columns: minmax(100px, 1.5fr) 1.2fr 1.5fr; align-items: center; gap: 10px;">
+                
+                <!-- 左列: コイン情報 -->
+                <div>
+                    <p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; padding: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{emoji} {row['コイン名']}</p>
+                    <p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #808495; margin: 0; padding: 0;">{row['アカウント数']} アカウント</p>
+                </div>
+
+                <!-- 中央列: 保有数量と現在価格 -->
+                <div style="text-align: right;">
+                    <p style="font-size: clamp(0.9em, 2.2vw, 1em); font-weight: 500; margin: 0; padding: 0; white-space: nowrap;">{quantity_display}</p>
+                    <p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #808495; margin: 0; padding: 0; white-space: nowrap;">{price_display}</p>
+                </div>
+
+                <!-- 右列: 評価額と変動率 -->
+                <div style="text-align: right;">
+                    <p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; padding: 0; white-space: nowrap;">{value_display}</p>
+                    <p style="font-size: clamp(0.8em, 2vw, 0.9em); color: {change_color}; margin: 0; padding: 0; white-space: nowrap;">{change_sign} {change_display}</p>
+                </div>
+
+            </div>
+        </div>
+        """)
+        st.markdown(card_html, unsafe_allow_html=True)
 
 def display_exchange_list(summary_exchange_df: pd.DataFrame, currency: str, rate: float):
-    """取引所別資産をカスタムリスト形式で表示します。"""
+    """取引所別資産をレスポンシブなカード形式で表示します。"""
     st.subheader("取引所別資産")
     symbol = CURRENCY_SYMBOLS[currency]
     is_hidden = st.session_state.get('balance_hidden', False)
@@ -462,25 +476,35 @@ def display_exchange_list(summary_exchange_df: pd.DataFrame, currency: str, rate
         st.info("保有資産はありません。")
         return
 
-    for i, row in summary_exchange_df.iterrows():
-        # 表示用データを準備
+    # 各取引所をループしてカードを生成
+    for _, row in summary_exchange_df.iterrows():
+        # --- 表示用データの準備 ---
         if is_hidden:
             value_display = f"{symbol}*****"
         else:
             total_value = row['評価額_jpy'] * rate
             value_display = f"{symbol}{total_value:,.2f}"
             
-        col1, col2 = st.columns([1, 1])
-        
-        with col1:
-            st.markdown(f"**🏦 {row['取引所']}**")
-            st.caption(f"{row['コイン数']} 銘柄")
-        
-        with col2:
-            st.markdown(f"<p style='text-align: right; font-size: 1.1em; font-weight: bold;'>{value_display}</p>", unsafe_allow_html=True)
+        # --- HTMLカードの構築 ---
+        card_html = textwrap.dedent(f"""
+        <div style="border: 1px solid #31333F; border-radius: 10px; padding: 15px 20px; margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
 
-        if i < len(summary_exchange_df) - 1:
-            st.divider()
+                <!-- 左側: 取引所情報 -->
+                <div>
+                    <p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; padding: 0; white-space: nowrap;">🏦 {row['取引所']}</p>
+                    <p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #808495; margin: 0; padding: 0;">{row['コイン数']} 銘柄</p>
+                </div>
+
+                <!-- 右側: 評価額 -->
+                <div style="text-align: right;">
+                    <p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; padding: 0; white-space: nowrap;">{value_display}</p>
+                </div>
+
+            </div>
+        </div>
+        """)
+        st.markdown(card_html, unsafe_allow_html=True)
 
 def display_add_transaction_form(coin_options: Dict[str, str], name_map: Dict[str, str], currency: str):
     """新しい取引履歴を登録するためのフォームを表示します。"""
