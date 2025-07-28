@@ -618,7 +618,7 @@ def render_watchlist_page(jpy_market_data: pd.DataFrame):
 
     rate = get_exchange_rate(vs_currency) if vs_currency == 'usd' else 1.0
     
-    tab_mcap, tab_custom = st.tabs(["時価総額ランキング", "カスタム"])
+    tab_mcap, tab_custom = st.tabs(["時価総額", "カスタム"])
     
     with tab_mcap:
         render_market_cap_watchlist(jpy_market_data, vs_currency, rate)
