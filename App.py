@@ -515,26 +515,27 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
     with col1: display_summary_card(total_asset_jpy, total_asset_btc, total_change_jpy, currency, rate)
     with col2:
         st.markdown("<div style='margin-top: 30px;'></div>", unsafe_allow_html=True)
-        if st.button("👁️", key=f"toggle_visibility_{currency}", help="残高の表示/非表示"):
+        
+        # ----------------- ▼▼▼ 変更箇所1 ▼▼▼ -----------------
+        # use_container_width=True を追加してボタンの幅を統一
+        if st.button("👁️", key=f"toggle_visibility_{currency}", help="残高の表示/非表示", use_container_width=True):
             st.session_state.balance_hidden = not st.session_state.get('balance_hidden', False)
             st.rerun()
         
-        # ----------------- ▼▼▼ 変更箇所1 ▼▼▼ -----------------
-        # ボタンのラベルを「USD」「JPY」から「$」「¥」に変更
         if currency == 'jpy':
-            button_label, new_currency = (CURRENCY_SYMBOLS['usd'], "usd") # $
+            button_label, new_currency = (CURRENCY_SYMBOLS['usd'], "usd")
         else:
-            button_label, new_currency = (CURRENCY_SYMBOLS['jpy'], "jpy") # ¥
+            button_label, new_currency = (CURRENCY_SYMBOLS['jpy'], "jpy")
 
-        if st.button(button_label, key=f"currency_toggle_main_{currency}", help=f"{new_currency.upper()}表示に切り替え"):
+        if st.button(button_label, key=f"currency_toggle_main_{currency}", help=f"{new_currency.upper()}表示に切り替え", use_container_width=True):
             st.session_state.currency = new_currency
             st.rerun()
-        # ----------------- ▲▲▲ 変更箇所1 ▲▲▲ -----------------
 
-        if st.button("🔄", key=f"refresh_data_{currency}", help="市場価格を更新"):
+        if st.button("🔄", key=f"refresh_data_{currency}", help="市場価格を更新", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
-    
+        # ----------------- ▲▲▲ 変更箇所1 ▲▲▲ -----------------
+            
     st.divider()
     
     tab_coin, tab_exchange, tab_history = st.tabs(["コイン", "取引所", "履歴"])
@@ -617,21 +618,24 @@ def render_custom_watchlist(market_data: pd.DataFrame, currency: str, rate: floa
             st.rerun()
 
 def render_watchlist_page(jpy_market_data: pd.DataFrame):
+    # ----------------- ▼▼▼ 変更箇所2 ▼▼▼ -----------------
+    # ウォッチリストページではボタンを縦に並べる必要がないため、
+    # st.columns はそのままにして、ボタンの use_container_width は維持します。
+    # これにより、ポートフォリオページのボタンと見た目の統一感が保たれます。
+    # (元々 use_container_width=True が設定されていたため、この関数のコード変更は不要です)
     _, col_btn = st.columns([0.9, 0.1])
     with col_btn:
         vs_currency = st.session_state.watchlist_currency
         
-        # ----------------- ▼▼▼ 変更箇所2 ▼▼▼ -----------------
-        # ボタンのラベルを「USD」「JPY」から「$」「¥」に変更
         if vs_currency == 'jpy':
-            button_label, new_currency = (CURRENCY_SYMBOLS['usd'], "usd") # $
+            button_label, new_currency = (CURRENCY_SYMBOLS['usd'], "usd")
         else:
-            button_label, new_currency = (CURRENCY_SYMBOLS['jpy'], "jpy") # ¥
+            button_label, new_currency = (CURRENCY_SYMBOLS['jpy'], "jpy")
 
         if st.button(button_label, key="currency_toggle_watchlist", use_container_width=True, help=f"{new_currency.upper()}表示に切り替え"):
             st.session_state.watchlist_currency = new_currency
             st.rerun()
-        # ----------------- ▲▲▲ 変更箇所2 ▲▲▲ -----------------
+    # ----------------- ▲▲▲ 変更箇所2 ▲▲▲ -----------------
 
     rate = get_exchange_rate(vs_currency) if vs_currency == 'usd' else 1.0
     
