@@ -152,12 +152,60 @@ def add_transaction_to_bq(transaction_data: Dict[str, Any]) -> bool:
     return not errors
 
 def delete_transaction_from_bq(transaction: pd.Series) -> bool:
-    # ... (省略)
-    pass
+    if not bq_client: return False
+    query = f"""
+    DELETE FROM {TABLE_TRANSACTIONS_FULL_ID}
+    WHERE transaction_date = @transaction_date AND coin_id = @coin_id AND exchange = @exchange
+    AND transaction_type = @transaction_type AND quantity = @quantity
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("transaction_date", "TIMESTAMP", transaction['登録日']),
+            bigquery.ScalarQueryParameter("coin_id", "STRING", transaction['コインID']),
+            bigquery.ScalarQueryParameter("exchange", "STRING", transaction['取引所']),
+            bigquery.ScalarQueryParameter("transaction_type", "STRING", transaction['登録種別']),
+            bigquery.ScalarQueryParameter("quantity", "FLOAT64", transaction['数量']),
+        ]
+    )
+    try:
+        bq_client.query(query, job_config=job_config).result()
+        return True
+    except Exception as e:
+        st.error(f"履歴の削除中にエラーが発生しました: {e}")
+        return False
 
 def update_transaction_in_bq(original_transaction: pd.Series, updated_data: Dict[str, Any]) -> bool:
-    # ... (省略)
-    pass
+    if not bq_client: return False
+    set_clauses, query_params = [], []
+    for key, value in updated_data.items():
+        set_clauses.append(f"{key} = @{key}")
+        field_type = next((field.field_type for field in BIGQUERY_SCHEMA_TRANSACTIONS if field.name == key), "STRING")
+        query_params.append(bigquery.ScalarQueryParameter(key, field_type, value))
+    
+    if not set_clauses: return False
+
+    set_sql = ", ".join(set_clauses)
+    where_params = [
+        bigquery.ScalarQueryParameter("where_transaction_date", "TIMESTAMP", original_transaction['登録日']),
+        bigquery.ScalarQueryParameter("where_coin_id", "STRING", original_transaction['コインID']),
+        bigquery.ScalarQueryParameter("where_exchange", "STRING", original_transaction['取引所']),
+        bigquery.ScalarQueryParameter("where_transaction_type", "STRING", original_transaction['登録種別']),
+        bigquery.ScalarQueryParameter("where_quantity", "FLOAT64", original_transaction['数量']),
+    ]
+    query = f"""
+    UPDATE {TABLE_TRANSACTIONS_FULL_ID} SET {set_sql}
+    WHERE transaction_date = @where_transaction_date AND coin_id = @where_coin_id
+    AND exchange = @where_exchange AND transaction_type = @where_transaction_type
+    AND quantity = @where_quantity
+    """
+    job_config = bigquery.QueryJobConfig(query_parameters=query_params + where_params)
+    try:
+        query_job = bq_client.query(query, job_config=job_config)
+        query_job.result()
+        return query_job.num_dml_affected_rows is None or query_job.num_dml_affected_rows > 0
+    except Exception as e:
+        st.error(f"履歴の更新中にエラーが発生しました: {e}")
+        return False
 
 def get_transactions_from_bq() -> pd.DataFrame:
     if not bq_client: return pd.DataFrame()
@@ -224,7 +272,53 @@ def get_exchange_rate(target_currency: str) -> float:
         st.warning(f"{target_currency.upper()}の為替レート取得に失敗しました: {e}")
         return 1.0
 
-# ... ポートフォリオ関連の計算関数 (変更なしのため省略) ...
+def calculate_portfolio(transactions_df: pd.DataFrame, market_data: pd.DataFrame) -> Tuple[Dict, float, float]:
+    price_map = market_data.set_index('id')['current_price'].to_dict()
+    yesterday_price_map = market_data.set_index('id').apply(
+        lambda row: row['current_price'] / (1 + row.get('price_change_percentage_24h', 0) / 100) if row.get('price_change_percentage_24h') is not None and (1 + row.get('price_change_percentage_24h', 0) / 100) != 0 else row['current_price'],
+        axis=1
+    ).to_dict()
+
+    portfolio, total_asset_jpy, total_change_24h_jpy = {}, 0.0, 0.0
+    if transactions_df.empty: return portfolio, total_asset_jpy, total_change_24h_jpy
+    for (coin_id, exchange), group in transactions_df.groupby(['コインID', '取引所']):
+        buy_quantity = group[group['登録種別'].isin(TRANSACTION_TYPES_BUY)]['数量'].sum()
+        sell_quantity = group[group['登録種別'].isin(TRANSACTION_TYPES_SELL)]['数量'].sum()
+        current_quantity = buy_quantity - sell_quantity
+
+        if current_quantity > 1e-9:
+            price = price_map.get(coin_id, 0)
+            yesterday_price = yesterday_price_map.get(coin_id, price)
+            change_24h = price - yesterday_price
+            value = current_quantity * price
+            
+            try:
+                coin_name = market_data.set_index('id').at[coin_id, 'name']
+            except KeyError:
+                coin_name = coin_id
+
+            portfolio[(coin_id, exchange)] = {"コイン名": coin_name, "取引所": exchange, "保有数量": current_quantity, "現在価格(JPY)": price, "評価額(JPY)": value, "コインID": coin_id}
+            total_asset_jpy += value
+            total_change_24h_jpy += current_quantity * change_24h
+    return portfolio, total_asset_jpy, total_change_24h_jpy
+
+def summarize_portfolio_by_coin(portfolio: Dict, market_data: pd.DataFrame) -> pd.DataFrame:
+    if not portfolio: return pd.DataFrame()
+    df = pd.DataFrame.from_dict(portfolio, orient='index').reset_index(drop=True)
+    summary = df.groupby('コインID').agg(コイン名=('コイン名', 'first'), 保有数量=('保有数量', 'sum'), 評価額_jpy=('評価額(JPY)', 'sum'), アカウント数=('取引所', 'nunique')).sort_values(by='評価額_jpy', ascending=False)
+    market_subset = market_data[['id', 'symbol', 'name', 'price_change_percentage_24h', 'image']].rename(columns={'id': 'コインID'})
+    summary = summary.reset_index().merge(market_subset, on='コインID', how='left')
+    summary['price_change_percentage_24h'] = summary['price_change_percentage_24h'].fillna(0)
+    summary.fillna({'symbol': '', 'image': '', 'name': ''}, inplace=True)
+    summary = summary[summary['保有数量'] > 1e-9]
+    return summary
+
+def calculate_btc_value(total_asset_jpy: float, market_data: pd.DataFrame) -> float:
+    try:
+        btc_price_jpy = market_data.set_index('id').at['bitcoin', 'current_price']
+        return total_asset_jpy / btc_price_jpy if btc_price_jpy > 0 else 0.0
+    except KeyError:
+        return 0.0
 
 # === 6. UIコンポーネント & ヘルパー関数 ===
 def format_price(price: float, symbol: str) -> str:
@@ -250,12 +344,97 @@ def generate_sparkline_svg(data: List[float], color: str = 'grey', width: int = 
     path_d = "M " + " L ".join(points)
     return f'<svg width="{width}" height="{height}" viewbox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" style="overflow: visible;"><path d="{path_d}" stroke="{color}" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" /></svg>'
 
-# ... ポートフォリオ関連のUI関数 (変更なしのため省略) ...
+def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_change_24h_jpy: float, currency: str, rate: float):
+    is_hidden = st.session_state.get('balance_hidden', False)
+    if is_hidden:
+        asset_display, btc_display, change_display, pct_display = f"{CURRENCY_SYMBOLS[currency]} *******", "≈ ***** BTC", "*****", "**.**%"
+        card_top_bg, card_bottom_bg, change_text_color = "#1E1E1E", "#2A2A2A", "#9E9E9E"
+    else:
+        yesterday_asset = total_asset_jpy - total_change_24h_jpy
+        change_pct = (total_change_24h_jpy / yesterday_asset * 100) if yesterday_asset != 0 else 0
+        symbol, is_positive = CURRENCY_SYMBOLS[currency], total_change_24h_jpy >= 0
+        card_top_bg, card_bottom_bg = ("#16B583", "#129B72") if is_positive else ("#FF5252", "#E54A4A")
+        change_text_color, change_sign = "#FFFFFF", "+" if is_positive else ""
+        asset_display = f"{symbol}{(total_asset_jpy * rate):,.2f} {currency.upper()}"
+        btc_display = f"≈ {total_asset_btc:.8f} BTC"
+        change_display = f"{change_sign}{(total_change_24h_jpy * rate):,.2f} {currency.upper()}"
+        pct_display = f"{change_sign}{change_pct:.2f}%"
+
+    card_html = f"""
+    <div style="border-radius: 10px; overflow: hidden; font-family: sans-serif;">
+        <div style="padding: 20px; background-color: {card_top_bg};">
+            <p style="font-size: 0.9em; margin: 0; color: #FFFFFF; opacity: 0.8;">残高</p>
+            <p style="font-size: clamp(1.6em, 5vw, 2.2em); font-weight: bold; margin: 0; line-height: 1.2; color: #FFFFFF;">{asset_display}</p>
+            <p style="font-size: clamp(0.9em, 2.5vw, 1.1em); font-weight: 500; margin-top: 5px; color: #FFFFFF; opacity: 0.9;">{btc_display}</p>
+        </div>
+        <div style="padding: 15px 20px; background-color: {card_bottom_bg}; display: flex; align-items: start;">
+            <div style="flex-basis: 50%;"><p style="font-size: 0.9em; margin: 0; color: #FFFFFF; opacity: 0.8;">24h 変動額</p><p style="font-size: clamp(1em, 3vw, 1.2em); font-weight: 600; margin-top: 5px; color: {change_text_color};">{change_display}</p></div>
+            <div style="flex-basis: 50%;"><p style="font-size: 0.9em; margin: 0; color: #FFFFFF; opacity: 0.8;">24h 変動率</p><p style="font-size: clamp(1em, 3vw, 1.2em); font-weight: 600; margin-top: 5px; color: {change_text_color};">{pct_display}</p></div>
+        </div>
+    </div>
+    """
+    st.markdown(card_html, unsafe_allow_html=True)
+
+def display_asset_list_new(summary_df: pd.DataFrame, currency: str, rate: float):
+    st.subheader("保有資産")
+    if summary_df.empty:
+        st.info("保有資産はありません。"); return
+    
+    symbol, is_hidden = CURRENCY_SYMBOLS[currency], st.session_state.get('balance_hidden', False)
+    for _, row in summary_df.iterrows():
+        change_pct = row.get('price_change_percentage_24h', 0)
+        is_positive = change_pct >= 0
+        change_color, change_sign = ("#16B583", "▲") if is_positive else ("#FF5252", "▼")
+        change_display, image_url = f"{abs(change_pct):.2f}%", row.get('image', '')
+        price_per_unit = (row['評価額_jpy'] / row['保有数量']) * rate if row['保有数量'] > 0 else 0
+        
+        if is_hidden:
+            quantity_display, value_display, price_display = "*****", f"{symbol}*****", f"{symbol}*****"
+        else:
+            quantity_display = f"{row['保有数量']:,.8f}".rstrip('0').rstrip('.')
+            value_display = f"{symbol}{row['評価額_jpy'] * rate:,.2f}"
+            price_display = f"{symbol}{price_per_unit:,.2f}"
+        
+        card_html = f"""
+        <div style="background-color: #1E1E1E; border: 1px solid #444444; border-radius: 10px; padding: 15px 20px; margin-bottom: 12px;">
+            <div style="display: grid; grid-template-columns: 3fr 3fr 4fr; align-items: center; gap: 10px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <img src="{image_url}" width="36" height="36" style="border-radius: 50%;">
+                    <div>
+                        <p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; color: #FFFFFF;">{row["symbol"].upper()}</p>
+                        <p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #9E9E9E; margin: 0;">{row["アカウント数"]} 取引所</p>
+                    </div>
+                </div>
+                <div style="text-align: right;"><p style="font-size: clamp(0.9em, 2.2vw, 1em); font-weight: 500; margin: 0; color: #E0E0E0;">{quantity_display}</p><p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #9E9E9E; margin: 0;">{price_display}</p></div>
+                <div style="text-align: right;"><p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; color: #FFFFFF;">{value_display}</p><p style="font-size: clamp(0.8em, 2vw, 0.9em); color: {change_color}; margin: 0;">{change_sign} {change_display}</p></div>
+            </div>
+        </div>
+        """
+        st.markdown(card_html, unsafe_allow_html=True)
 
 # === 7. ページ描画関数 ===
-def render_portfolio_page(*args, **kwargs):
-    # ... ポートフォリオページの描画ロジック (変更なしのため省略)
-    pass
+def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFrame, currency: str, rate: float):
+    portfolio, total_asset_jpy, total_change_jpy = calculate_portfolio(transactions_df, market_data)
+    total_asset_btc = calculate_btc_value(total_asset_jpy, market_data)
+    summary_df = summarize_portfolio_by_coin(portfolio, market_data)
+    
+    col1, col2 = st.columns([0.9, 0.1])
+    with col1: display_summary_card(total_asset_jpy, total_asset_btc, total_change_jpy, currency, rate)
+    with col2:
+        st.markdown("<div style='margin-top: 30px;'></div>", unsafe_allow_html=True)
+        if st.button("👁️", key=f"toggle_visibility_{currency}", help="残高の表示/非表示"):
+            st.session_state.balance_hidden = not st.session_state.get('balance_hidden', False)
+            st.rerun()
+        button_label, new_currency = ("USD", "usd") if currency == 'jpy' else ("JPY", "jpy")
+        if st.button(button_label, key=f"currency_toggle_main_{currency}"):
+            st.session_state.currency = new_currency
+            st.rerun()
+        if st.button("🔄", key=f"refresh_data_{currency}", help="市場価格を更新"):
+            st.cache_data.clear()
+            st.rerun()
+    
+    st.divider()
+    display_asset_list_new(summary_df, currency, rate)
 
 def render_watchlist_row(row_data: pd.Series, currency: str, rate: float, rank: str = " "):
     currency_symbol = CURRENCY_SYMBOLS.get(currency, '$')
@@ -306,11 +485,9 @@ def render_custom_watchlist(market_data: pd.DataFrame, currency: str, rate: floa
         st.info("カスタムウォッチリストは空です。下の編集エリアから銘柄を追加してください。")
     
     st.divider()
-
-    # --- 修正: 画像に合わせた編集UI ---
     with st.container(border=True):
-        st.subheader("ウォッチリストの編集（追加・削除・並び替え）")
-        st.info("銘柄の追加、削除、順番の入れ替えが可能です。順番を変更するには、一度リストから削除し、再度追加してください。")
+        st.subheader("ウォッチリストの編集")
+        st.info("銘柄の追加・削除が可能です。リストの順番は選択した順になります。")
         
         current_list_ids = watchlist_db['coin_id'].tolist() if not watchlist_db.empty else []
         all_coins_options = {row['id']: f"{row['name']} ({row['symbol'].upper()})" for _, row in market_data.iterrows()}
@@ -371,38 +548,10 @@ def main():
     with portfolio_tab:
         current_currency = st.session_state.currency
         current_rate = usd_rate if current_currency == 'usd' else 1.0
-        # ポートフォリオページの描画を復元
-        # render_portfolio_page(transactions_df, jpy_market_data, currency=current_currency, rate=current_rate) # ポートフォリオ機能が必要な場合はこの行を有効化
+        render_portfolio_page(transactions_df, jpy_market_data, currency=current_currency, rate=current_rate)
 
     with watchlist_tab:
         render_watchlist_page(jpy_market_data)
 
 if __name__ == "__main__":
-    # 完全なmain関数を復元
-    st.markdown(BLACK_THEME_CSS, unsafe_allow_html=True)
-    st.session_state.setdefault('balance_hidden', False)
-    st.session_state.setdefault('currency', 'jpy')
-    st.session_state.setdefault('watchlist_currency', 'jpy')
-    
-    if not bq_client: st.stop()
-
-    jpy_market_data = get_full_market_data(currency='jpy')
-    if jpy_market_data.empty:
-        st.error("市場データを取得できませんでした。"); st.stop()
-    
-    init_bigquery_table(TABLE_TRANSACTIONS_FULL_ID, BIGQUERY_SCHEMA_TRANSACTIONS)
-    init_bigquery_table(TABLE_WATCHLIST_FULL_ID, BIGQUERY_SCHEMA_WATCHLIST)
-
-    # ポートフォリオ機能のロジックは省略せずに含める
-    # transactions_df = get_transactions_from_bq() 
-    usd_rate = get_exchange_rate('usd')
-
-    portfolio_tab, watchlist_tab = st.tabs(["ポートフォリオ", "ウォッチリスト"])
-
-    with portfolio_tab:
-        current_currency = st.session_state.currency
-        current_rate = usd_rate if current_currency == 'usd' else 1.0
-        # render_portfolio_page(transactions_df, jpy_market_data, currency=current_currency, rate=current_rate)
-
-    with watchlist_tab:
-        render_watchlist_page(jpy_market_data)
+    main()
