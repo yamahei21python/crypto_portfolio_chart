@@ -289,7 +289,6 @@ def get_exchange_rate(target_currency: str) -> float:
 
 def calculate_portfolio(transactions_df: pd.DataFrame, market_data: pd.DataFrame) -> Tuple[Dict, float, float]:
     price_map = market_data.set_index('id')['current_price'].to_dict()
-    # 昨日の価格を計算
     yesterday_price_map = market_data.set_index('id').apply(
         lambda row: row['current_price'] / (1 + row.get('price_change_percentage_24h', 0) / 100) if row.get('price_change_percentage_24h') is not None and (1 + row.get('price_change_percentage_24h', 0) / 100) != 0 else row['current_price'],
         axis=1
@@ -428,7 +427,6 @@ def display_asset_list_new(summary_df: pd.DataFrame, currency: str, rate: float)
         """
         st.markdown(card_html, unsafe_allow_html=True)
 
-
 # === 7. ページ描画関数 ===
 def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFrame, currency: str, rate: float):
     portfolio, total_asset_jpy, total_change_jpy = calculate_portfolio(transactions_df, market_data)
@@ -451,7 +449,6 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
             st.rerun()
     
     st.divider()
-    # 履歴や取引所タブは必要に応じて復活させてください
     display_asset_list_new(summary_df, currency, rate)
 
 def render_watchlist_row(row_data: pd.Series, currency: str, rate: float, rank: str = " "):
@@ -523,11 +520,15 @@ def render_custom_watchlist(market_data: pd.DataFrame, currency: str, rate: floa
             st.rerun()
 
 def render_watchlist_page(jpy_market_data: pd.DataFrame):
-    c1, _, c3, c4 = st.columns([1.5, 0.5, 1.5, 1.5])
-    with c1: vs_currency = st.selectbox("Currency", options=["jpy", "usd"], format_func=lambda x: f"{x.upper()}", key="watchlist_currency", label_visibility="collapsed")
-    with c3: st.button("24時間 % ▾", use_container_width=True, disabled=True)
-    with c4: st.button("トップ100 ▾", use_container_width=True, disabled=True)
-    
+    # --- 通貨切り替えボタンを右寄せで配置 ---
+    _, col_btn = st.columns([0.9, 0.1])
+    with col_btn:
+        vs_currency = st.session_state.watchlist_currency
+        button_label, new_currency = ("USD", "usd") if vs_currency == 'jpy' else ("JPY", "jpy")
+        if st.button(button_label, key="currency_toggle_watchlist", use_container_width=True):
+            st.session_state.watchlist_currency = new_currency
+            st.rerun()
+
     rate = get_exchange_rate(vs_currency) if vs_currency == 'usd' else 1.0
     
     tab_mcap, tab_custom = st.tabs(["時価総額ランキング", "カスタム"])
@@ -541,7 +542,8 @@ def render_watchlist_page(jpy_market_data: pd.DataFrame):
 def main():
     st.markdown(BLACK_THEME_CSS, unsafe_allow_html=True)
     st.session_state.setdefault('balance_hidden', False)
-    st.session_state.setdefault('currency', 'jpy')
+    st.session_state.setdefault('currency', 'jpy') # ポートフォリオ用
+    st.session_state.setdefault('watchlist_currency', 'jpy') # ウォッチリスト用
     
     if not bq_client: st.stop()
 
