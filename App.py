@@ -411,8 +411,7 @@ def display_asset_list_new(summary_df: pd.DataFrame, currency: str, rate: float)
                 <div style="display: flex; align-items: center; gap: 12px;">
                     <img src="{image_url}" width="24" height="24" style="border-radius: 50%;">
                     <div>
-                        <p img src="{image_url}" width="24" height="24" style="border-radius: 50%;"
-                        style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; color: #FFFFFF;">{row["symbol"].upper()}</p>
+                        <p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; color: #FFFFFF;">{row["symbol"].upper()}</p>
                         <p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #9E9E9E; margin: 0;">{row["アカウント数"]} 取引所</p>
                     </div>
                 </div>
