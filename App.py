@@ -238,7 +238,6 @@ def add_to_watchlist_in_bq(user_id: str, coin_ids: List[str]):
     result = bq_client.query(max_order_query, job_config=job_config).to_dataframe()
     max_order = result['max_order'][0] if not result.empty and pd.notna(result['max_order'][0]) else -1
     
-    # 修正: datetimeオブジェクトをISO文字列に変換
     rows_to_insert = [
         {"user_id": user_id, "coin_id": coin_id, "sort_order": i + max_order + 1, "added_at": datetime.now(timezone.utc).isoformat()}
         for i, coin_id in enumerate(coin_ids)
@@ -256,20 +255,31 @@ def remove_from_watchlist_in_bq(user_id: str, coin_id: str):
     bq_client.query(query, job_config=job_config).result()
 
 def update_watchlist_order_in_bq(user_id: str, ordered_coin_ids: List[str]):
-    if not bq_client or not ordered_coin_ids: return
-    
-    updates_sql = ",\n".join([f"('{coin_id}', {i})" for i, coin_id in enumerate(ordered_coin_ids)])
-    query = f"""
-    MERGE {TABLE_WATCHLIST_FULL_ID} T
-    USING (SELECT * FROM UNNEST(ARRAY<STRUCT<coin_id STRING, new_order INT64>>[
-        {updates_sql}
-    ])) S
-    ON T.user_id = @user_id AND T.coin_id = S.coin_id
-    WHEN MATCHED THEN
-      UPDATE SET sort_order = S.new_order;
     """
-    job_config = bigquery.QueryJobConfig(query_parameters=[bigquery.ScalarQueryParameter("user_id", "STRING", user_id)])
-    bq_client.query(query, job_config=job_config).result()
+    ウォッチリストの順序を一括で更新する。
+    トランザクションを使い、個別のUPDATE文で堅牢に処理する。
+    """
+    if not bq_client or not ordered_coin_ids:
+        return
+
+    queries = []
+    for i, coin_id in enumerate(ordered_coin_ids):
+        query = f"""
+        UPDATE `{TABLE_WATCHLIST_FULL_ID}`
+        SET sort_order = {i}
+        WHERE user_id = '{user_id}' AND coin_id = '{coin_id}';
+        """
+        queries.append(query)
+    
+    # BigQueryは暗黙的に各ステートメントがトランザクションとして扱われるが、
+    # スクリプトとしてまとめて送信することでアトミック性を高める
+    full_script = "\n".join(queries)
+    try:
+        job = bq_client.query(full_script)
+        job.result()  # クエリの完了を待つ
+    except Exception as e:
+        st.error(f"ウォッチリストの並び替え中にエラーが発生しました: {e}")
+
 
 # === 5. API & データ処理関数 ===
 @st.cache_data(ttl=600)
@@ -527,7 +537,10 @@ def render_custom_watchlist(market_data: pd.DataFrame, vs_currency: str):
     watchlist_df = watchlist_df.merge(market_data, left_on='coin_id', right_on='id', how='left').dropna(subset=['id'])
     usd_rate = get_exchange_rate('usd')
 
-    for i, row in watchlist_df.iterrows():
+    # DataFrameをリストに変換して操作しやすくする
+    watchlist_list = watchlist_df.to_dict('records')
+
+    for i, row in enumerate(watchlist_list):
         c1, c2, c3 = st.columns([8, 1, 1])
         with c1:
             price_val = row.get('price_jpy', 0) * (usd_rate if vs_currency == 'usd' else 1.0)
@@ -553,17 +566,29 @@ def render_custom_watchlist(market_data: pd.DataFrame, vs_currency: str):
         
         with c2:
             if st.button("▲", key=f"up_{row['id']}", use_container_width=True, disabled=(i == 0)):
-                current_ids = watchlist_df['coin_id'].tolist()
-                current_ids.insert(i-1, current_ids.pop(i))
-                update_watchlist_order_in_bq(USER_ID, current_ids); st.cache_data.clear(); st.rerun()
-            if st.button("▼", key=f"down_{row['id']}", use_container_width=True, disabled=(i == len(watchlist_df) - 1)):
-                current_ids = watchlist_df['coin_id'].tolist()
-                current_ids.insert(i+1, current_ids.pop(i))
-                update_watchlist_order_in_bq(USER_ID, current_ids); st.cache_data.clear(); st.rerun()
+                # リスト内で要素を入れ替え
+                watchlist_list[i], watchlist_list[i-1] = watchlist_list[i-1], watchlist_list[i]
+                ordered_ids = [item['id'] for item in watchlist_list]
+                update_watchlist_order_in_bq(USER_ID, ordered_ids)
+                st.cache_data.clear(); st.rerun()
+
+            if st.button("▼", key=f"down_{row['id']}", use_container_width=True, disabled=(i == len(watchlist_list) - 1)):
+                # リスト内で要素を入れ替え
+                watchlist_list[i], watchlist_list[i+1] = watchlist_list[i+1], watchlist_list[i]
+                ordered_ids = [item['id'] for item in watchlist_list]
+                update_watchlist_order_in_bq(USER_ID, ordered_ids)
+                st.cache_data.clear(); st.rerun()
+
         with c3:
             if st.button("🗑️", key=f"del_{row['id']}", use_container_width=True):
-                remove_from_watchlist_in_bq(USER_ID, row['id']); st.cache_data.clear(); st.rerun()
+                remove_from_watchlist_in_bq(USER_ID, row['id'])
+                # 削除後のリストで順序を再更新
+                remaining_ids = [item['id'] for item in watchlist_list if item['id'] != row['id']]
+                update_watchlist_order_in_bq(USER_ID, remaining_ids)
+                st.cache_data.clear(); st.rerun()
+                
         st.markdown("<hr style='margin: 2px 0; border-color: #222;'>", unsafe_allow_html=True)
+
 
 def render_watchlist_page(market_data):
     c1, _, c2, c3, c4 = st.columns([1.5, 0.5, 1.5, 1.5, 1])
