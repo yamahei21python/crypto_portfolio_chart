@@ -138,9 +138,11 @@ def init_bigquery_table(table_full_id: str, schema: List[bigquery.SchemaField]):
     try:
         bq_client.get_table(table_full_id)
     except google.api_core.exceptions.NotFound:
+        table_name = table_full_id.split('.')[-1]
+        st.toast(f"BigQueryテーブル '{table_name}' を新規作成します。")
         table = bigquery.Table(table_full_id, schema=schema)
         bq_client.create_table(table)
-        st.toast(f"BigQueryテーブル '{table_full_id.split('.')[-1]}' を新規作成しました。")
+        st.toast(f"テーブル '{table_name}' を作成しました。")
 
 def add_transaction_to_bq(transaction_data: Dict[str, Any]) -> bool:
     if not bq_client: return False
@@ -236,8 +238,9 @@ def add_to_watchlist_in_bq(user_id: str, coin_ids: List[str]):
     result = bq_client.query(max_order_query, job_config=job_config).to_dataframe()
     max_order = result['max_order'][0] if not result.empty and pd.notna(result['max_order'][0]) else -1
     
+    # 修正: datetimeオブジェクトをISO文字列に変換
     rows_to_insert = [
-        {"user_id": user_id, "coin_id": coin_id, "sort_order": i + max_order + 1, "added_at": datetime.now(timezone.utc)}
+        {"user_id": user_id, "coin_id": coin_id, "sort_order": i + max_order + 1, "added_at": datetime.now(timezone.utc).isoformat()}
         for i, coin_id in enumerate(coin_ids)
     ]
     errors = bq_client.insert_rows_json(TABLE_WATCHLIST_FULL_ID, rows_to_insert)
@@ -308,10 +311,10 @@ def summarize_portfolio_by_coin(portfolio: Dict, market_data: pd.DataFrame) -> p
     if not portfolio: return pd.DataFrame()
     df = pd.DataFrame.from_dict(portfolio, orient='index').reset_index(drop=True)
     summary = df.groupby('コインID').agg(コイン名=('コイン名', 'first'), 保有数量=('保有数量', 'sum'), 評価額_jpy=('評価額(JPY)', 'sum'), アカウント数=('取引所', 'nunique')).sort_values(by='評価額_jpy', ascending=False)
-    market_subset = market_data[['id', 'symbol', 'price_change_percentage_24h', 'image']].rename(columns={'id': 'コインID'})
+    market_subset = market_data[['id', 'symbol', 'name', 'price_change_percentage_24h', 'image']].rename(columns={'id': 'コインID'})
     summary = summary.reset_index().merge(market_subset, on='コインID', how='left')
     summary['price_change_percentage_24h'] = summary['price_change_percentage_24h'].fillna(0)
-    summary['symbol'], summary['image'] = summary['symbol'].fillna(''), summary['image'].fillna('')
+    summary['symbol'], summary['image'], summary['name'] = summary['symbol'].fillna(''), summary['image'].fillna(''), summary['name'].fillna('')
     summary = summary[summary['保有数量'] > 1e-9]
     return summary
 
@@ -395,8 +398,8 @@ def display_composition_bar(summary_df: pd.DataFrame):
 def display_asset_list_new(summary_df: pd.DataFrame, currency: str, rate: float):
     st.subheader("保有資産")
     if summary_df.empty:
-        st.info("保有資産はありません。")
-        return
+        st.info("保有資産はありません。"); return
+    
     symbol, is_hidden = CURRENCY_SYMBOLS[currency], st.session_state.get('balance_hidden', False)
     for _, row in summary_df.iterrows():
         change_pct = row.get('price_change_percentage_24h', 0)
@@ -412,31 +415,24 @@ def display_asset_list_new(summary_df: pd.DataFrame, currency: str, rate: float)
             value_display = f"{symbol}{row['評価額_jpy'] * rate:,.2f}"
             price_display = f"{symbol}{price_per_unit:,.2f}"
         
-        # 修正: アイコンとシンボルを横並びにするレイアウトに変更
         card_html = f"""
         <div style="background-color: #1E1E1E; border: 1px solid #444444; border-radius: 10px; padding: 15px 20px; margin-bottom: 12px;">
             <div style="display: grid; grid-template-columns: 3fr 3fr 4fr; align-items: center; gap: 10px;">
-                <div>
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <img src="{image_url}" width="32" height="32" style="border-radius: 50%;">
-                        <span style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; color: #FFFFFF;">{row["symbol"].upper()}</span>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <img src="{image_url}" width="36" height="36" style="border-radius: 50%;">
+                    <div>
+                        <p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; color: #FFFFFF;">{row["symbol"].upper()}</p>
+                        <p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #9E9E9E; margin: 0;">{row["アカウント数"]} 取引所</p>
                     </div>
-                    <p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #9E9E9E; margin: 2px 0 0 0; padding-left: 42px;">{row["アカウント数"]} 取引所</p>
                 </div>
-                <div style="text-align: right;">
-                    <p style="font-size: clamp(0.9em, 2.2vw, 1em); font-weight: 500; margin: 0; color: #E0E0E0;">{quantity_display}</p>
-                    <p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #9E9E9E; margin: 0;">{price_display}</p>
-                </div>
-                <div style="text-align: right;">
-                    <p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; color: #FFFFFF;">{value_display}</p>
-                    <p style="font-size: clamp(0.8em, 2vw, 0.9em); color: {change_color}; margin: 0;">{change_sign} {change_display}</p>
-                </div>
+                <div style="text-align: right;"><p style="font-size: clamp(0.9em, 2.2vw, 1em); font-weight: 500; margin: 0; color: #E0E0E0;">{quantity_display}</p><p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #9E9E9E; margin: 0;">{price_display}</p></div>
+                <div style="text-align: right;"><p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; color: #FFFFFF;">{value_display}</p><p style="font-size: clamp(0.8em, 2vw, 0.9em); color: {change_color}; margin: 0;">{change_sign} {change_display}</p></div>
             </div>
         </div>
         """
         st.markdown(card_html, unsafe_allow_html=True)
 
-# ... display_exchange_list, display_add_transaction_form, etc. は変更なし ...
+# ... (他のUI関数は省略) ...
 
 # === 7. ページ描画関数 ===
 def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFrame, currency: str, rate: float):
@@ -480,8 +476,7 @@ def render_market_cap_watchlist(market_data: pd.DataFrame, vs_currency: str):
     
     watchlist_df = get_sparkline_data(vs_currency)
     if watchlist_df.empty:
-        st.warning("データが取得できませんでした。")
-        return
+        st.warning("データが取得できませんでした。"); return
 
     currency_symbol = CURRENCY_SYMBOLS.get(vs_currency, '$')
     for index, row in watchlist_df.iterrows():
@@ -523,35 +518,32 @@ def render_custom_watchlist(market_data: pd.DataFrame, vs_currency: str):
         if st.form_submit_button("追加する"):
             if coins_to_add:
                 add_to_watchlist_in_bq(USER_ID, coins_to_add)
-                st.cache_data.clear()
-                st.rerun()
+                st.cache_data.clear(); st.rerun()
 
     st.divider()
-
     if watchlist_df.empty:
-        st.info("カスタムウォッチリストは空です。上のフォームから銘柄を追加してください。")
-        return
+        st.info("カスタムウォッチリストは空です。"); return
 
     watchlist_df = watchlist_df.merge(market_data, left_on='coin_id', right_on='id', how='left').dropna(subset=['id'])
+    usd_rate = get_exchange_rate('usd')
 
     for i, row in watchlist_df.iterrows():
         c1, c2, c3 = st.columns([8, 1, 1])
         with c1:
-            price_val = row.get('price_jpy', 0) * (get_exchange_rate(vs_currency) if vs_currency == 'usd' else 1.0)
+            price_val = row.get('price_jpy', 0) * (usd_rate if vs_currency == 'usd' else 1.0)
             change_pct = row.get('price_change_percentage_24h', 0) or 0
             is_positive = change_pct >= 0
             change_color, change_icon = ("#16B583", "▲") if is_positive else ("#FF5252", "▼")
             formatted_price = f"{CURRENCY_SYMBOLS.get(vs_currency, '$')}{price_val:,.4f}"
 
-            # 修正: アイコンとシンボルを横並びにするレイアウトに変更
             card_html = f"""
             <div style="display: grid; grid-template-columns: 4fr 3fr 3fr; align-items: center; padding: 5px 0; font-family: sans-serif;">
-                <div>
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <img src="{row['image']}" width="32" height="32" style="border-radius: 50%;">
-                        <span style="font-weight: bold; color: #FFFFFF;">{row['symbol'].upper()}</span>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <img src="{row['image']}" width="32" height="32" style="border-radius: 50%;">
+                    <div>
+                        <div style="font-weight: bold; color: #FFFFFF;">{row['symbol'].upper()}</div>
+                        <div style="font-size: 0.9em; color: #9E9E9E;">{row['name']}</div>
                     </div>
-                    <div style="font-size: 0.9em; color: #9E9E9E; margin: 2px 0 0 0; padding-left: 42px;">{row['name']}</div>
                 </div>
                 <div style="text-align: right; font-weight: 500; color: #E0E0E0;">{formatted_price}</div>
                 <div style="text-align: right; font-weight: bold; color: {change_color};">{change_icon} {abs(change_pct):.2f}%</div>
