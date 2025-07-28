@@ -1,18 +1,18 @@
 # -- coding: utf-8 --
 """
-仮想通貨ポートフォリオ管理Streamlitアプリケーション (アカウント機能付き)
+仮想通貨ポートフォリオ管理Streamlitアプリケーション (アカウント・編集機能付き)
 
 このアプリケーションは、ユーザーの仮想通貨取引履歴を記録・管理し、
 現在の資産状況をリアルタイムで可視化するためのツールです。
 
 主な機能:
-- ★アカウント作成、ログイン、ログアウト機能
-- ★ユーザーごとのポートフォリオ、ウォッチリスト管理
+- アカウント作成、ログイン、ログアウト機能
+- ユーザーごとのポートフォリオ、ウォッチリスト管理
 - CoinGecko APIを利用したリアルタイム価格取得（手動更新機能付き）
 - Google BigQueryをバックエンドとした取引履歴の永続化
 - ポートフォリオの円グラフおよび資産一覧での可視化
 - JPY建て、USD建てでの資産評価表示
-- 取引履歴の追加、編集（数量・取引所）、削除
+- ★取引履歴の追加、編集、削除
 - 時価総額ランキングとカスタムウォッチリストの表示（並び替え・削除対応）
 """
 
@@ -27,27 +27,29 @@ from google.oauth2 import service_account
 import google.api_core.exceptions
 from typing import Dict, Any, Tuple, List
 import re
-import bcrypt # ★パスワードハッシュ化のために追加
+import bcrypt
+import uuid # ★ 取引ID生成のために追加
 
 # === 2. 定数・グローバル設定 ===
 # --- BigQuery関連 ---
 PROJECT_ID = "cyptodb"
 DATASET_ID = "coinalyze_data"
-TABLE_USERS = "users" # ★ユーザーテーブルを追加
+TABLE_USERS = "users"
 TABLE_TRANSACTIONS = "transactions"
 TABLE_WATCHLIST = "watchlist"
 TABLE_USERS_FULL_ID = f"{PROJECT_ID}.{DATASET_ID}.{TABLE_USERS}"
 TABLE_TRANSACTIONS_FULL_ID = f"{PROJECT_ID}.{DATASET_ID}.{TABLE_TRANSACTIONS}"
 TABLE_WATCHLIST_FULL_ID = f"{PROJECT_ID}.{DATASET_ID}.{TABLE_WATCHLIST}"
 
-# ★★★ スキーマ定義の変更 ★★★
 BIGQUERY_SCHEMA_USERS = [
     bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("password_hash", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("created_at", "TIMESTAMP", mode="REQUIRED"),
 ]
+# ★★★ スキーマ定義の変更 ★★★
 BIGQUERY_SCHEMA_TRANSACTIONS = [
-    bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"), # ★user_idカラムを追加
+    bigquery.SchemaField("transaction_id", "STRING", mode="REQUIRED"), # ★取引IDを追加
+    bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("transaction_date", "TIMESTAMP", mode="REQUIRED"),
     bigquery.SchemaField("coin_id", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("coin_name", "STRING", mode="REQUIRED"),
@@ -58,18 +60,19 @@ BIGQUERY_SCHEMA_TRANSACTIONS = [
     bigquery.SchemaField("fee_jpy", "FLOAT64", mode="REQUIRED"),
     bigquery.SchemaField("total_jpy", "FLOAT64", mode="REQUIRED"),
 ]
+# ★★★ ここまで ★★★
 BIGQUERY_SCHEMA_WATCHLIST = [
     bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("coin_id", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("sort_order", "INTEGER", mode="REQUIRED"),
     bigquery.SchemaField("added_at", "TIMESTAMP", mode="REQUIRED"),
 ]
-# ★★★ ここまで ★★★
 
 COLUMN_NAME_MAP_JA = {
-    'transaction_date': '登録日', 'coin_name': 'コイン名', 'exchange': '取引所',
-    'transaction_type': '登録種別', 'quantity': '数量', 'price_jpy': '価格(JPY)',
-    'fee_jpy': '手数料(JPY)', 'total_jpy': '合計(JPY)', 'coin_id': 'コインID'
+    'transaction_id': '取引ID', 'transaction_date': '登録日', 'coin_name': 'コイン名', 
+    'exchange': '取引所', 'transaction_type': '登録種別', 'quantity': '数量', 
+    'price_jpy': '価格(JPY)', 'fee_jpy': '手数料(JPY)', 'total_jpy': '合計(JPY)', 
+    'coin_id': 'コインID'
 }
 
 # --- アプリケーションUI関連 ---
@@ -96,34 +99,13 @@ body, .main, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
 h1, h2, h3, h4, h5, h6 {
     color: #FFFFFF;
 }
-/* Streamlitウィジェットの調整 */
-[data-testid="stTabs"] {
-    color: #E0E0E0;
-}
-button[data-baseweb="tab"] {
-    color: #9E9E9E;
-}
-button[data-baseweb="tab"][aria-selected="true"] {
-    color: #FFFFFF;
-    border-bottom: 2px solid #FFFFFF;
-}
-[data-testid="stDataFrame"] thead th {
-    background-color: #1E1E1E;
-    color: #FFFFFF;
-}
-/* カスタムコンポーネントの色調整 */
-[data-testid="stVerticalBlock"] > [data-testid="stVerticalBlock"] {
-    border: 1px solid #444444 !important;
-}
-/* Selectboxを画像のようなボタン風に調整 */
-[data-testid="stSelectbox"] > div {
-    background-color: #2a2a2a;
-    border-radius: 8px;
-    border: none;
-}
-[data-testid="stSelectbox"] > div > div {
-    color: #FFFFFF;
-}
+[data-testid="stTabs"] { color: #E0E0E0; }
+button[data-baseweb="tab"] { color: #9E9E9E; }
+button[data-baseweb="tab"][aria-selected="true"] { color: #FFFFFF; border-bottom: 2px solid #FFFFFF; }
+[data-testid="stDataFrame"] thead th { background-color: #1E1E1E; color: #FFFFFF; }
+[data-testid="stVerticalBlock"] > [data-testid="stVerticalBlock"] { border: 1px solid #444444 !important; }
+[data-testid="stSelectbox"] > div { background-color: #2a2a2a; border-radius: 8px; border: none; }
+[data-testid="stSelectbox"] > div > div { color: #FFFFFF; }
 </style>
 """
 
@@ -143,7 +125,7 @@ def get_bigquery_client() -> bigquery.Client | None:
 cg_client = CoinGeckoAPI()
 bq_client = get_bigquery_client()
 
-# === 4. 認証関連関数 (新規追加) ===
+# === 4. 認証関連関数 ===
 def hash_password(password: str) -> bytes:
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
 
@@ -178,7 +160,7 @@ def create_user_in_bq(user_id: str, password: str) -> bool:
     errors = bq_client.insert_rows_json(TABLE_USERS_FULL_ID, [user_data])
     return not errors
 
-# === 5. BigQuery 操作関数 (ユーザーID対応) ===
+# === 5. BigQuery 操作関数 ===
 def init_bigquery_table(table_full_id: str, schema: List[bigquery.SchemaField]):
     if not bq_client: return
     try:
@@ -192,26 +174,49 @@ def init_bigquery_table(table_full_id: str, schema: List[bigquery.SchemaField]):
 
 def add_transaction_to_bq(user_id: str, transaction_data: Dict[str, Any]) -> bool:
     if not bq_client: return False
-    transaction_data["user_id"] = user_id # ★ユーザーIDを追加
-    transaction_data["transaction_date"] = datetime.now(timezone.utc).isoformat()
-    errors = bq_client.insert_rows_json(TABLE_TRANSACTIONS_FULL_ID, [transaction_data])
-    return not errors
-
-def delete_transaction_from_bq(user_id: str, transaction: pd.Series) -> bool:
-    if not bq_client: return False
+    transaction_id = str(uuid.uuid4())
     query = f"""
-    DELETE FROM `{TABLE_TRANSACTIONS_FULL_ID}`
-    WHERE user_id = @user_id AND transaction_date = @transaction_date AND coin_id = @coin_id
-    AND exchange = @exchange AND transaction_type = @transaction_type AND quantity = @quantity
+    INSERT INTO `{TABLE_TRANSACTIONS_FULL_ID}`
+    (transaction_id, user_id, transaction_date, coin_id, coin_name, exchange, transaction_type, quantity, price_jpy, fee_jpy, total_jpy)
+    VALUES
+    (@transaction_id, @user_id, @transaction_date, @coin_id, @coin_name, @exchange, @transaction_type, @quantity, @price_jpy, @fee_jpy, @total_jpy)
     """
     job_config = bigquery.QueryJobConfig(
         query_parameters=[
-            bigquery.ScalarQueryParameter("user_id", "STRING", user_id), # ★ユーザーIDを追加
-            bigquery.ScalarQueryParameter("transaction_date", "TIMESTAMP", transaction['登録日']),
-            bigquery.ScalarQueryParameter("coin_id", "STRING", transaction['コインID']),
-            bigquery.ScalarQueryParameter("exchange", "STRING", transaction['取引所']),
-            bigquery.ScalarQueryParameter("transaction_type", "STRING", transaction['登録種別']),
-            bigquery.ScalarQueryParameter("quantity", "FLOAT64", transaction['数量']),
+            bigquery.ScalarQueryParameter("transaction_id", "STRING", transaction_id),
+            bigquery.ScalarQueryParameter("user_id", "STRING", user_id),
+            bigquery.ScalarQueryParameter("transaction_date", "TIMESTAMP", transaction_data['transaction_date']),
+            bigquery.ScalarQueryParameter("coin_id", "STRING", transaction_data['coin_id']),
+            bigquery.ScalarQueryParameter("coin_name", "STRING", transaction_data['coin_name']),
+            bigquery.ScalarQueryParameter("exchange", "STRING", transaction_data['exchange']),
+            bigquery.ScalarQueryParameter("transaction_type", "STRING", transaction_data['transaction_type']),
+            bigquery.ScalarQueryParameter("quantity", "FLOAT64", transaction_data['quantity']),
+            bigquery.ScalarQueryParameter("price_jpy", "FLOAT64", transaction_data['price_jpy']),
+            bigquery.ScalarQueryParameter("fee_jpy", "FLOAT64", transaction_data['fee_jpy']),
+            bigquery.ScalarQueryParameter("total_jpy", "FLOAT64", transaction_data['total_jpy']),
+        ]
+    )
+    try:
+        query_job = bq_client.query(query, job_config=job_config)
+        query_job.result()
+        if query_job.errors:
+            st.error(f"履歴の登録中にエラーが発生しました: {query_job.errors}")
+            return False
+        return True
+    except Exception as e:
+        st.error(f"履歴の登録中に予期せぬエラーが発生しました: {e}")
+        return False
+
+def delete_transaction_from_bq(user_id: str, transaction_id: str) -> bool:
+    if not bq_client: return False
+    query = f"""
+    DELETE FROM `{TABLE_TRANSACTIONS_FULL_ID}`
+    WHERE user_id = @user_id AND transaction_id = @transaction_id
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("user_id", "STRING", user_id),
+            bigquery.ScalarQueryParameter("transaction_id", "STRING", transaction_id),
         ]
     )
     try:
@@ -220,21 +225,53 @@ def delete_transaction_from_bq(user_id: str, transaction: pd.Series) -> bool:
     except Exception as e:
         st.error(f"履歴の削除中にエラーが発生しました: {e}")
         return False
-        
+
+def update_transaction_in_bq(user_id: str, transaction_id: str, updated_data: Dict[str, Any]) -> bool:
+    if not bq_client: return False
+    query = f"""
+    UPDATE `{TABLE_TRANSACTIONS_FULL_ID}`
+    SET
+        transaction_date = @transaction_date,
+        exchange = @exchange,
+        quantity = @quantity,
+        price_jpy = @price_jpy,
+        fee_jpy = @fee_jpy,
+        total_jpy = @total_jpy
+    WHERE
+        user_id = @user_id AND transaction_id = @transaction_id
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("transaction_date", "TIMESTAMP", updated_data['transaction_date']),
+            bigquery.ScalarQueryParameter("exchange", "STRING", updated_data['exchange']),
+            bigquery.ScalarQueryParameter("quantity", "FLOAT64", updated_data['quantity']),
+            bigquery.ScalarQueryParameter("price_jpy", "FLOAT64", updated_data['price_jpy']),
+            bigquery.ScalarQueryParameter("fee_jpy", "FLOAT64", updated_data['fee_jpy']),
+            bigquery.ScalarQueryParameter("total_jpy", "FLOAT64", updated_data['total_jpy']),
+            bigquery.ScalarQueryParameter("user_id", "STRING", user_id),
+            bigquery.ScalarQueryParameter("transaction_id", "STRING", transaction_id),
+        ]
+    )
+    try:
+        query_job = bq_client.query(query, job_config=job_config)
+        query_job.result()
+        if query_job.errors:
+            st.error(f"履歴の更新中にエラーが発生しました: {query_job.errors}")
+            return False
+        return True
+    except Exception as e:
+        st.error(f"履歴の更新中に予期せぬエラーが発生しました: {e}")
+        return False
+
 def get_transactions_from_bq(user_id: str) -> pd.DataFrame:
     if not bq_client: return pd.DataFrame()
-    query = f"""
-        SELECT * FROM `{TABLE_TRANSACTIONS_FULL_ID}`
-        WHERE user_id = @user_id
-        ORDER BY transaction_date DESC
-    """
+    query = f"SELECT * FROM `{TABLE_TRANSACTIONS_FULL_ID}` WHERE user_id = @user_id ORDER BY transaction_date DESC"
     job_config = bigquery.QueryJobConfig(
         query_parameters=[bigquery.ScalarQueryParameter("user_id", "STRING", user_id)]
     )
     try:
         df = bq_client.query(query, job_config=job_config).to_dataframe(create_bqstorage_client=False)
         if df.empty: return pd.DataFrame()
-        # user_idカラムは表示しない
         df = df.drop(columns=['user_id'], errors='ignore')
         df['transaction_date'] = pd.to_datetime(df['transaction_date']).dt.tz_convert('Asia/Tokyo')
         return df.rename(columns=COLUMN_NAME_MAP_JA)
@@ -255,15 +292,12 @@ def get_watchlist_from_bq(user_id: str) -> pd.DataFrame:
 
 def update_watchlist_in_bq(user_id: str, ordered_coin_ids: List[str]):
     if not bq_client: return
-    
     job_config = bigquery.QueryJobConfig(
         query_parameters=[bigquery.ScalarQueryParameter("user_id", "STRING", user_id)]
     )
     delete_query = f"DELETE FROM `{TABLE_WATCHLIST_FULL_ID}` WHERE user_id = @user_id"
     bq_client.query(delete_query, job_config=job_config).result()
-    
     if not ordered_coin_ids: return
-        
     rows_to_insert = [
         {"user_id": user_id, "coin_id": coin_id, "sort_order": i, "added_at": datetime.now(timezone.utc).isoformat()}
         for i, coin_id in enumerate(ordered_coin_ids)
@@ -353,14 +387,13 @@ def calculate_btc_value(total_asset_jpy: float, market_data: pd.DataFrame) -> fl
         return total_asset_jpy / btc_price_jpy if btc_price_jpy > 0 else 0.0
     except KeyError:
         return 0.0
-
-# === 7. UIコンポーネント & ヘルパー関数 (ユーザーID対応) ===
+        
+# === 7. UIコンポーネント & ヘルパー関数 ===
 def format_price(price: float, symbol: str) -> str:
     if price >= 1:
         formatted = f"{price:,.2f}"
     else:
         formatted = f"{price:,.8f}"
-    
     formatted = re.sub(r'\.0+$', '', formatted)
     formatted = re.sub(r'(\.\d*?[1-9])0+$', r'\1', formatted)
     return f"{symbol}{formatted}"
@@ -371,7 +404,6 @@ def format_market_cap(value: float, symbol: str) -> str:
         if value >= 100_000_000: return f"{symbol}{value / 100_000_000:.2f}億"
         if value >= 1_000_000: return f"{symbol}{value / 10_000:,.1f}万"
         return f"{symbol}{value:,.0f}"
-
     if value >= 1_000_000_000: return f"{symbol}{value / 1_000_000_000:.2f}B"
     if value >= 1_000_000: return f"{symbol}{value / 1_000_000:.2f}M"
     return f"{symbol}{value:,.0f}"
@@ -399,7 +431,6 @@ def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_c
         btc_display = f"≈ {total_asset_btc:.8f} BTC"
         change_display = f"{change_sign}{(total_change_24h_jpy * rate):,.2f} {currency.upper()}"
         pct_display = f"{change_sign}{change_pct:.2f}%"
-
     card_html = f"""
     <div style="border-radius: 10px; overflow: hidden; font-family: sans-serif;">
         <div style="padding: 20px; background-color: {card_top_bg};">
@@ -458,8 +489,7 @@ def display_exchange_list(summary_exchange_df: pd.DataFrame, currency: str, rate
     is_hidden = st.session_state.get('balance_hidden', False)
     
     if summary_exchange_df.empty:
-        st.info("保有資産はありません。")
-        return
+        st.info("保有資産はありません。"); return
 
     for _, row in summary_exchange_df.iterrows():
         value_display = f"{symbol}*****" if is_hidden else f"{symbol}{row['評価額_jpy'] * rate:,.2f}"
@@ -470,9 +500,7 @@ def display_exchange_list(summary_exchange_df: pd.DataFrame, currency: str, rate
                     <p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; color: #FFFFFF;">🏦 {row["取引所"]}</p>
                     <p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #9E9E9E; margin: 0;">{row["コイン数"]} 銘柄</p>
                 </div>
-                <div style="text-align: right;">
-                    <p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; color: #FFFFFF;">{value_display}</p>
-                </div>
+                <div style="text-align: right;"><p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; color: #FFFFFF;">{value_display}</p></div>
             </div>
         </div>
         """
@@ -503,35 +531,75 @@ def display_add_transaction_form(user_id: str, market_data: pd.DataFrame, curren
                     "exchange": exchange, "transaction_type": trans_type, "quantity": quantity,
                     "price_jpy": price, "fee_jpy": fee, "total_jpy": quantity * price
                 }
-                # ★user_idを渡すように変更
                 if add_transaction_to_bq(user_id, transaction):
                     st.success(f"{transaction['coin_name']}の{trans_type}履歴を登録しました。")
                     st.rerun()
 
-def display_transaction_history(user_id: str, transactions_df: pd.DataFrame, currency: str):
+# ★★★ 履歴表示＆編集機能の全体を修正 ★★★
+def display_transaction_history(user_id: str, transactions_df: pd.DataFrame):
     st.subheader("🗒️ 登録履歴一覧")
     if transactions_df.empty:
         st.info("まだ登録履歴がありません。")
         return
     
     for index, row in transactions_df.iterrows():
-        unique_key = f"{currency}_{index}"
-        with st.container(border=True):
-            cols = st.columns([4, 2])
-            with cols[0]:
-                st.markdown(f"**{row['コイン名']}** - {row['登録種別']}")
-                st.caption(f"{row['登録日'].strftime('%Y/%m/%d')} | {row['取引所']}")
-                st.text(f"数量: {row['数量']:.8f}".rstrip('0').rstrip('.'))
-            with cols[1]:
-                if st.button("削除 🗑️", key=f"del_{unique_key}", use_container_width=True, help="この履歴を削除します"):
-                    # ★user_idを渡すように変更
-                    if delete_transaction_from_bq(user_id, row):
-                        st.toast(f"履歴を削除しました: {row['登録日'].strftime('%Y/%m/%d')}の{row['コイン名']}", icon="🗑️")
-                        st.rerun()
+        transaction_id = row['取引ID']
+        
+        # 編集モードかどうかをチェック
+        if st.session_state.get('editing_transaction_id') == transaction_id:
+            # --- 編集フォームの表示 ---
+            with st.form(key=f"edit_form_{transaction_id}"):
+                st.markdown(f"**{row['コイン名']}** - {row['登録種別']} の履歴を編集中...")
+                
+                cols = st.columns(3)
+                with cols[0]:
+                    edit_date = st.date_input("取引日", value=row['登録日'], key=f"edit_date_{transaction_id}")
+                    edit_exchange = st.selectbox("取引所", options=EXCHANGES_ORDERED, index=EXCHANGES_ORDERED.index(row['取引所']) if row['取引所'] in EXCHANGES_ORDERED else 0, key=f"edit_exchange_{transaction_id}")
+                with cols[1]:
+                    edit_quantity = st.number_input("数量", min_value=0.0, value=row['数量'], format="%.8f", key=f"edit_qty_{transaction_id}")
+                with cols[2]:
+                    edit_price = st.number_input("価格 (JPY)", min_value=0.0, value=row['価格(JPY)'], format="%.2f", key=f"edit_price_{transaction_id}")
+                    edit_fee = st.number_input("手数料 (JPY)", min_value=0.0, value=row['手数料(JPY)'], format="%.2f", key=f"edit_fee_{transaction_id}")
 
-# === 8. ページ描画関数 (ユーザーID対応) ===
+                btn_cols = st.columns(2)
+                with btn_cols[0]:
+                    if st.form_submit_button("保存する", use_container_width=True):
+                        updated_data = {
+                            "transaction_date": datetime.combine(edit_date, datetime.min.time()),
+                            "exchange": edit_exchange,
+                            "quantity": edit_quantity,
+                            "price_jpy": edit_price,
+                            "fee_jpy": edit_fee,
+                            "total_jpy": edit_quantity * edit_price,
+                        }
+                        if update_transaction_in_bq(user_id, transaction_id, updated_data):
+                            st.toast("履歴を更新しました。", icon="✅")
+                            st.session_state.editing_transaction_id = None
+                            st.rerun()
+                with btn_cols[1]:
+                     if st.form_submit_button("キャンセル", use_container_width=True, type="secondary"):
+                        st.session_state.editing_transaction_id = None
+                        st.rerun()
+        else:
+            # --- 通常の履歴表示 ---
+            with st.container(border=True):
+                cols = st.columns([4, 2, 2])
+                with cols[0]:
+                    st.markdown(f"**{row['コイン名']}** - {row['登録種別']}")
+                    st.caption(f"{row['登録日'].strftime('%Y/%m/%d')} | {row['取引所']}")
+                    st.text(f"数量: {row['数量']:.8f}".rstrip('0').rstrip('.'))
+                with cols[1]:
+                    if st.button("編集 ✏️", key=f"edit_{transaction_id}", use_container_width=True):
+                        st.session_state.editing_transaction_id = transaction_id
+                        st.rerun()
+                with cols[2]:
+                    if st.button("削除 🗑️", key=f"del_{transaction_id}", use_container_width=True):
+                        if delete_transaction_from_bq(user_id, transaction_id):
+                            st.toast(f"履歴を削除しました。", icon="🗑️")
+                            st.rerun()
+
+# === 8. ページ描画関数 ===
 def render_portfolio_page(user_id: str, jpy_market_data: pd.DataFrame, currency: str, rate: float):
-    # ★user_idを使ってデータを取得
     transactions_df = get_transactions_from_bq(user_id)
     
     portfolio, total_asset_jpy, total_change_jpy = calculate_portfolio(transactions_df, jpy_market_data)
@@ -566,7 +634,7 @@ def render_portfolio_page(user_id: str, jpy_market_data: pd.DataFrame, currency:
     with tab_exchange:
         display_exchange_list(summary_exchange_df, currency, rate)
     with tab_history:
-        display_transaction_history(user_id, transactions_df, currency)
+        display_transaction_history(user_id, transactions_df)
         display_add_transaction_form(user_id, jpy_market_data, currency)
 
 def render_watchlist_row(row_data: pd.Series, currency: str, rate: float, rank: str = " "):
@@ -658,7 +726,7 @@ def render_watchlist_page(user_id: str, jpy_market_data: pd.DataFrame):
     with tab_custom:
         render_custom_watchlist(user_id, jpy_market_data, vs_currency, rate)
 
-# === 9. 認証画面描画関数 (新規追加) ===
+# === 9. 認証画面描画関数 ===
 def render_auth_page():
     st.title("🪙 仮想通貨ポートフォリオへようこそ")
     st.markdown("アカウントを作成して、あなたの資産を記録・管理しましょう。")
@@ -671,6 +739,9 @@ def render_auth_page():
             password = st.text_input("パスワード", type="password")
             submitted = st.form_submit_button("ログイン")
             if submitted:
+                if not user_id or not password:
+                    st.warning("ユーザーIDとパスワードを入力してください。")
+                    return
                 user_data = get_user_from_bq(user_id)
                 if user_data and verify_password(password, user_data['password_hash'].encode('utf-8')):
                     st.session_state.authenticated = True
@@ -697,9 +768,8 @@ def render_auth_page():
                 else:
                     if create_user_in_bq(new_user_id, new_password):
                         st.success("アカウントが作成されました！ログインタブからログインしてください。")
-                    # エラーメッセージはcreate_user_in_bq内で表示
 
-# === 10. メイン処理 (認証フローを組み込み) ===
+# === 10. メイン処理 ===
 def main():
     st.markdown(BLACK_THEME_CSS, unsafe_allow_html=True)
     
@@ -708,6 +778,7 @@ def main():
     st.session_state.setdefault('balance_hidden', False)
     st.session_state.setdefault('currency', 'jpy')
     st.session_state.setdefault('watchlist_currency', 'jpy')
+    st.session_state.setdefault('editing_transaction_id', None) # ★編集モード管理用
     
     if not bq_client: st.stop()
     
@@ -721,21 +792,23 @@ def main():
     with st.sidebar:
         st.success(f"{user_id} でログイン中")
         if st.button("ログアウト", use_container_width=True):
-            st.session_state.authenticated = False
-            st.session_state.user_id = None
+            for key in list(st.session_state.keys()): del st.session_state[key]
             st.toast("ログアウトしました。")
             st.rerun()
         st.divider()
         st.write("表示設定")
-        # 将来的に設定項目を追加するスペース
+
+    try:
+        init_bigquery_table(TABLE_TRANSACTIONS_FULL_ID, BIGQUERY_SCHEMA_TRANSACTIONS)
+        init_bigquery_table(TABLE_WATCHLIST_FULL_ID, BIGQUERY_SCHEMA_WATCHLIST)
+    except Exception as e:
+        st.error(f"データベースの初期化中にエラーが発生しました: {e}")
+        st.stop()
 
     jpy_market_data = get_full_market_data(currency='jpy')
     if jpy_market_data.empty:
         st.error("市場データを取得できませんでした。"); st.stop()
     
-    init_bigquery_table(TABLE_TRANSACTIONS_FULL_ID, BIGQUERY_SCHEMA_TRANSACTIONS)
-    init_bigquery_table(TABLE_WATCHLIST_FULL_ID, BIGQUERY_SCHEMA_WATCHLIST)
-
     usd_rate = get_exchange_rate('usd')
 
     portfolio_tab, watchlist_tab = st.tabs(["ポートフォリオ", "ウォッチリスト"])
