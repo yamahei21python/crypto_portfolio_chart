@@ -340,10 +340,20 @@ def format_price(price: float, symbol: str) -> str:
     formatted = re.sub(r'(\.\d*?[1-9])0+$', r'\1', formatted)
     return f"{symbol}{formatted}"
 
+# ----------------- ▼▼▼ 変更箇所 ▼▼▼ -----------------
 def format_market_cap(value: float, symbol: str) -> str:
+    # JPYの場合は「兆」「億」単位、それ以外は「B」「M」単位で表示
+    if symbol == '¥':
+        if value >= 1_000_000_000_000: return f"{symbol}{value / 1_000_000_000_000:.2f}兆"
+        if value >= 100_000_000: return f"{symbol}{value / 100_000_000:.2f}億"
+        if value >= 1_000_000: return f"{symbol}{value / 10_000:,.1f}万" # M(Million)より万円表示が自然
+        return f"{symbol}{value:,.0f}"
+
+    # JPY以外の通貨
     if value >= 1_000_000_000: return f"{symbol}{value / 1_000_000_000:.2f}B"
     if value >= 1_000_000: return f"{symbol}{value / 1_000_000:.2f}M"
     return f"{symbol}{value:,.0f}"
+# ----------------- ▲▲▲ 変更箇所 ▲▲▲ -----------------
 
 def generate_sparkline_svg(data: List[float], color: str = 'grey', width: int = 80, height: int = 35) -> str:
     if not data or len(data) < 2: return ""
