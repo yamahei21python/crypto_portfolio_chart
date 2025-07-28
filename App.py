@@ -314,17 +314,12 @@ def summarize_portfolio_by_coin(portfolio: Dict, market_data: pd.DataFrame) -> p
     return summary
 
 def summarize_portfolio_by_exchange(portfolio: Dict) -> pd.DataFrame:
-    """ポートフォリオデータを取引所ごとに集計します。"""
-    if not portfolio:
-        return pd.DataFrame()
-
+    if not portfolio: return pd.DataFrame()
     df = pd.DataFrame.from_dict(portfolio, orient='index').reset_index(drop=True)
-
     summary = df.groupby('取引所').agg(
         評価額_jpy=('評価額(JPY)', 'sum'),
         コイン数=('コイン名', 'nunique')
     ).sort_values(by='評価額_jpy', ascending=False).reset_index()
-
     return summary
 
 def calculate_btc_value(total_asset_jpy: float, market_data: pd.DataFrame) -> float:
@@ -409,15 +404,16 @@ def display_asset_list_new(summary_df: pd.DataFrame, currency: str, rate: float)
             value_display = f"{symbol}{row['評価額_jpy'] * rate:,.2f}"
             price_display = f"{symbol}{price_per_unit:,.2f}"
         
+        # 修正: アイコンとシンボルを横並びにするレイアウトに変更
         card_html = f"""
         <div style="background-color: #1E1E1E; border: 1px solid #444444; border-radius: 10px; padding: 15px 20px; margin-bottom: 12px;">
             <div style="display: grid; grid-template-columns: 3fr 3fr 4fr; align-items: center; gap: 10px;">
-                <div style="display: flex; align-items: center; gap: 12px;">
-                    <img src="{image_url}" width="36" height="36" style="border-radius: 50%;">
-                    <div>
+                <div>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <img src="{image_url}" width="36" height="36" style="border-radius: 50%;">
                         <p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; color: #FFFFFF;">{row["symbol"].upper()}</p>
-                        <p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #9E9E9E; margin: 0;">{row["アカウント数"]} 取引所</p>
                     </div>
+                    <p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #9E9E9E; margin: 2px 0 0; padding-left: 48px;">{row["アカウント数"]} 取引所</p>
                 </div>
                 <div style="text-align: right;"><p style="font-size: clamp(0.9em, 2.2vw, 1em); font-weight: 500; margin: 0; color: #E0E0E0;">{quantity_display}</p><p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #9E9E9E; margin: 0;">{price_display}</p></div>
                 <div style="text-align: right;"><p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; color: #FFFFFF;">{value_display}</p><p style="font-size: clamp(0.8em, 2vw, 0.9em); color: {change_color}; margin: 0;">{change_sign} {change_display}</p></div>
@@ -487,8 +483,6 @@ def display_transaction_history(transactions_df: pd.DataFrame, currency: str):
         st.info("まだ登録履歴がありません。")
         return
     
-    # ... (履歴編集フォームのロジックは必要なら追加) ...
-
     for index, row in transactions_df.iterrows():
         unique_key = f"{currency}_{index}"
         with st.container(border=True):
@@ -502,7 +496,6 @@ def display_transaction_history(transactions_df: pd.DataFrame, currency: str):
                     if delete_transaction_from_bq(row):
                         st.toast(f"履歴を削除しました: {row['登録日'].strftime('%Y/%m/%d')}の{row['コイン名']}", icon="🗑️")
                         st.rerun()
-
 
 # === 7. ページ描画関数 ===
 def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFrame, currency: str, rate: float):
@@ -618,7 +611,7 @@ def render_watchlist_page(jpy_market_data: pd.DataFrame):
 
     rate = get_exchange_rate(vs_currency) if vs_currency == 'usd' else 1.0
     
-    tab_mcap, tab_custom = st.tabs(["時価総額", "カスタム"])
+    tab_mcap, tab_custom = st.tabs(["時価総額ランキング", "カスタム"])
     
     with tab_mcap:
         render_market_cap_watchlist(jpy_market_data, vs_currency, rate)
