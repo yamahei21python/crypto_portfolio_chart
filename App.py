@@ -313,6 +313,20 @@ def summarize_portfolio_by_coin(portfolio: Dict, market_data: pd.DataFrame) -> p
     summary = summary[summary['保有数量'] > 1e-9]
     return summary
 
+def summarize_portfolio_by_exchange(portfolio: Dict) -> pd.DataFrame:
+    """ポートフォリオデータを取引所ごとに集計します。"""
+    if not portfolio:
+        return pd.DataFrame()
+
+    df = pd.DataFrame.from_dict(portfolio, orient='index').reset_index(drop=True)
+
+    summary = df.groupby('取引所').agg(
+        評価額_jpy=('評価額(JPY)', 'sum'),
+        コイン数=('コイン名', 'nunique')
+    ).sort_values(by='評価額_jpy', ascending=False).reset_index()
+
+    return summary
+
 def calculate_btc_value(total_asset_jpy: float, market_data: pd.DataFrame) -> float:
     try:
         btc_price_jpy = market_data.set_index('id').at['bitcoin', 'current_price']
@@ -412,11 +426,90 @@ def display_asset_list_new(summary_df: pd.DataFrame, currency: str, rate: float)
         """
         st.markdown(card_html, unsafe_allow_html=True)
 
+def display_exchange_list(summary_exchange_df: pd.DataFrame, currency: str, rate: float):
+    st.subheader("取引所別資産")
+    symbol = CURRENCY_SYMBOLS[currency]
+    is_hidden = st.session_state.get('balance_hidden', False)
+    
+    if summary_exchange_df.empty:
+        st.info("保有資産はありません。")
+        return
+
+    for _, row in summary_exchange_df.iterrows():
+        value_display = f"{symbol}*****" if is_hidden else f"{symbol}{row['評価額_jpy'] * rate:,.2f}"
+        card_html = f"""
+        <div style="background-color: #1E1E1E; border: 1px solid #444444; border-radius: 10px; padding: 15px 20px; margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; color: #FFFFFF;">🏦 {row["取引所"]}</p>
+                    <p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #9E9E9E; margin: 0;">{row["コイン数"]} 銘柄</p>
+                </div>
+                <div style="text-align: right;">
+                    <p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; color: #FFFFFF;">{value_display}</p>
+                </div>
+            </div>
+        </div>
+        """
+        st.markdown(card_html, unsafe_allow_html=True)
+
+def display_add_transaction_form(market_data: pd.DataFrame, currency: str):
+    with st.expander("新しい取引履歴を追加", expanded=False):
+        coin_options = {row['id']: f"{row['name']} ({row['symbol'].upper()})" for _, row in market_data.iterrows()}
+        name_map = market_data.set_index('id')['name'].to_dict()
+        with st.form(key=f"transaction_form_{currency}", clear_on_submit=True):
+            st.subheader("履歴の登録")
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                date = st.date_input("取引日", datetime.now(), key=f"date_{currency}")
+                coin_disp = st.selectbox("コイン", options=list(coin_options.keys()), format_func=lambda x: coin_options.get(x,x), key=f"coin_{currency}")
+            with c2:
+                trans_type = st.selectbox("種別", ["購入", "売却"], key=f"type_{currency}")
+                exchange = st.selectbox("取引所", options=EXCHANGES_ORDERED, key=f"exchange_{currency}")
+            with c3:
+                quantity = st.number_input("数量", min_value=0.0, format="%.8f", key=f"qty_{currency}")
+                price = st.number_input("価格 (JPY)", min_value=0.0, format="%.2f", key=f"price_{currency}")
+                fee = st.number_input("手数料 (JPY)", min_value=0.0, format="%.2f", key=f"fee_{currency}")
+            
+            if st.form_submit_button("この内容で登録する"):
+                transaction = {
+                    "transaction_date": datetime.combine(date, datetime.min.time()),
+                    "coin_id": coin_disp, "coin_name": name_map.get(coin_disp, coin_disp),
+                    "exchange": exchange, "transaction_type": trans_type, "quantity": quantity,
+                    "price_jpy": price, "fee_jpy": fee, "total_jpy": quantity * price
+                }
+                if add_transaction_to_bq(transaction):
+                    st.success(f"{transaction['coin_name']}の{trans_type}履歴を登録しました。")
+                    st.rerun()
+
+def display_transaction_history(transactions_df: pd.DataFrame, currency: str):
+    st.subheader("🗒️ 登録履歴一覧")
+    if transactions_df.empty:
+        st.info("まだ登録履歴がありません。")
+        return
+    
+    # ... (履歴編集フォームのロジックは必要なら追加) ...
+
+    for index, row in transactions_df.iterrows():
+        unique_key = f"{currency}_{index}"
+        with st.container(border=True):
+            cols = st.columns([4, 2])
+            with cols[0]:
+                st.markdown(f"**{row['コイン名']}** - {row['登録種別']}")
+                st.caption(f"{row['登録日'].strftime('%Y/%m/%d')} | {row['取引所']}")
+                st.text(f"数量: {row['数量']:.8f}".rstrip('0').rstrip('.'))
+            with cols[1]:
+                if st.button("削除 🗑️", key=f"del_{unique_key}", use_container_width=True, help="この履歴を削除します"):
+                    if delete_transaction_from_bq(row):
+                        st.toast(f"履歴を削除しました: {row['登録日'].strftime('%Y/%m/%d')}の{row['コイン名']}", icon="🗑️")
+                        st.rerun()
+
+
 # === 7. ページ描画関数 ===
 def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFrame, currency: str, rate: float):
     portfolio, total_asset_jpy, total_change_jpy = calculate_portfolio(transactions_df, market_data)
     total_asset_btc = calculate_btc_value(total_asset_jpy, market_data)
     summary_df = summarize_portfolio_by_coin(portfolio, market_data)
+    summary_exchange_df = summarize_portfolio_by_exchange(portfolio)
     
     col1, col2 = st.columns([0.9, 0.1])
     with col1: display_summary_card(total_asset_jpy, total_asset_btc, total_change_jpy, currency, rate)
@@ -434,7 +527,15 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
             st.rerun()
     
     st.divider()
-    display_asset_list_new(summary_df, currency, rate)
+    
+    tab_coin, tab_exchange, tab_history = st.tabs(["コイン", "取引所", "履歴"])
+    with tab_coin:
+        display_asset_list_new(summary_df, currency, rate)
+    with tab_exchange:
+        display_exchange_list(summary_exchange_df, currency, rate)
+    with tab_history:
+        display_transaction_history(transactions_df, currency)
+        display_add_transaction_form(market_data, currency)
 
 def render_watchlist_row(row_data: pd.Series, currency: str, rate: float, rank: str = " "):
     currency_symbol = CURRENCY_SYMBOLS.get(currency, '$')
