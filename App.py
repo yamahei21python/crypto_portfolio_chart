@@ -257,37 +257,31 @@ def remove_from_watchlist_in_bq(user_id: str, coin_id: str):
 def update_watchlist_order_in_bq(user_id: str, ordered_coin_ids: List[str]):
     if not bq_client: return
     
-    if not ordered_coin_ids: # 空リストの場合は全削除
-        query = f"DELETE FROM {TABLE_WATCHLIST_FULL_ID} WHERE user_id = @user_id"
-        job_config = bigquery.QueryJobConfig(query_parameters=[bigquery.ScalarQueryParameter("user_id", "STRING", user_id)])
-        bq_client.query(query, job_config=job_config).result()
-        return
+    # 既存のリストを一度クリア
+    delete_query = f"DELETE FROM `{TABLE_WATCHLIST_FULL_ID}` WHERE user_id = '{user_id}'"
+    bq_client.query(delete_query).result()
+    
+    # 新しい順序で再挿入
+    if not ordered_coin_ids:
+        return # 空なら何もしない
+        
+    rows_to_insert = [
+        {"user_id": user_id, "coin_id": coin_id, "sort_order": i, "added_at": datetime.now(timezone.utc).isoformat()}
+        for i, coin_id in enumerate(ordered_coin_ids)
+    ]
+    errors = bq_client.insert_rows_json(TABLE_WATCHLIST_FULL_ID, rows_to_insert)
+    if errors:
+        st.error(f"ウォッチリストの更新に失敗しました: {errors}")
 
-    # MERGE文は堅牢性を高めるため、CASE文を使ったUPDATEに切り替える
-    update_cases = "\n".join([f"WHEN '{coin_id}' THEN {i}" for i, coin_id in enumerate(ordered_coin_ids)])
-    query = f"""
-    UPDATE `{TABLE_WATCHLIST_FULL_ID}`
-    SET sort_order = CASE coin_id
-        {update_cases}
-    END
-    WHERE user_id = '{user_id}' AND coin_id IN ({','.join([f"'{c}'" for c in ordered_coin_ids])})
-    """
-    try:
-        job = bq_client.query(query)
-        job.result()
-    except Exception as e:
-        st.error(f"ウォッチリストの並び替え中にエラーが発生しました: {e}")
 
 # === 5. API & データ処理関数 ===
 @st.cache_data(ttl=300)
 def get_full_market_data(currency='jpy') -> pd.DataFrame:
     try:
-        # スパークライン付きのデータを取得
         data = cg_client.get_coins_markets(
             vs_currency=currency, order='market_cap_desc', per_page=250, page=1, sparkline=True
         )
         df = pd.DataFrame(data)
-        # 必要なカラムのみに絞る
         cols = ['id', 'symbol', 'name', 'image', f'current_price', f'price_change_percentage_24h', 'market_cap', 'sparkline_in_7d']
         df = df[[col for col in cols if col in df.columns]]
         return df
@@ -319,9 +313,17 @@ def calculate_portfolio(transactions_df: pd.DataFrame, market_data: pd.DataFrame
         sell_quantity = group[group['登録種別'].isin(TRANSACTION_TYPES_SELL)]['数量'].sum()
         current_quantity = buy_quantity - sell_quantity
         if current_quantity > 1e-9:
-            price, change_24h = price_map.get(coin_id, 0), price_map.get(coin_id, 0) - price_change_map.get(coin_id, 0)
+            price = price_map.get(coin_id, 0)
+            yesterday_price = price_change_map.get(coin_id, price)
+            change_24h = price - yesterday_price
             value = current_quantity * price
-            portfolio[(coin_id, exchange)] = {"コイン名": market_data.set_index('id').at[coin_id, 'name'], "取引所": exchange, "保有数量": current_quantity, "現在価格(JPY)": price, "評価額(JPY)": value, "コインID": coin_id}
+            
+            try:
+                coin_name = market_data.set_index('id').at[coin_id, 'name']
+            except KeyError:
+                coin_name = coin_id
+
+            portfolio[(coin_id, exchange)] = {"コイン名": coin_name, "取引所": exchange, "保有数量": current_quantity, "現在価格(JPY)": price, "評価額(JPY)": value, "コインID": coin_id}
             total_asset_jpy += value
             total_change_24h_jpy += current_quantity * change_24h
     return portfolio, total_asset_jpy, total_change_24h_jpy
@@ -359,7 +361,7 @@ def generate_sparkline_svg(data: List[float], color: str = 'grey', width: int = 
     return f'<svg width="{width}" height="{height}" viewbox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" style="overflow: visible;"><path d="{path_d}" stroke="{color}" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" /></svg>'
 
 def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_change_24h_jpy: float, currency: str, rate: float):
-    # ... (変更なし)
+    # (変更なし)
     is_hidden = st.session_state.get('balance_hidden', False)
     if is_hidden:
         asset_display, btc_display, change_display, pct_display = f"{CURRENCY_SYMBOLS[currency]} *******", "≈ ***** BTC", "*****", "**.**%"
@@ -452,11 +454,10 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
     st.divider()
     tab_coin, _, _ = st.tabs(["コイン", "取引所", "履歴"]) # 他のタブは省略
     with tab_coin:
-        # display_composition_bar(summary_df) # 必要なら復活
         st.markdown("<br>", unsafe_allow_html=True) 
         display_asset_list_new(summary_df, currency, rate)
 
-def render_watchlist_row(row_data: pd.Series, currency: str, rate: float, rank: str = "#"):
+def render_watchlist_row(row_data: pd.Series, currency: str, rate: float, rank: str = " "): # rankのデフォルトを空白に変更
     """ウォッチリストの単一行をHTMLで描画する"""
     symbol, is_positive = CURRENCY_SYMBOLS.get(currency, '$'), row_data.get('price_change_percentage_24h', 0) >= 0
     change_color, change_icon = ("#16B583", "▲") if is_positive else ("#FF5252", "▼")
@@ -496,51 +497,38 @@ def render_market_cap_watchlist(market_data: pd.DataFrame, currency: str, rate: 
 
 def render_custom_watchlist(market_data: pd.DataFrame, currency: str, rate: float):
     watchlist_db = get_watchlist_from_bq(USER_ID)
+    
+    # DBの順序を市場データに適用
     if not watchlist_db.empty:
-        # DBの順序を市場データに適用
         watchlist_df = watchlist_db.merge(market_data, left_on='coin_id', right_on='id', how='left').dropna(subset=['id'])
         for _, row in watchlist_df.iterrows():
-            # 各行を削除ボタン付きで描画
-            col1, col2 = st.columns([10, 1])
-            with col1:
-                render_watchlist_row(row, currency, rate)
-            with col2:
-                st.markdown("<div style='height: 25px;'></div>", unsafe_allow_html=True) # 位置合わせ
-                if st.button("🗑️", key=f"del_custom_{row['id']}", use_container_width=True):
-                    remove_from_watchlist_in_bq(USER_ID, row['id'])
-                    # 削除後は順序の再更新が必要
-                    remaining_ids = watchlist_df[watchlist_df['id'] != row['id']]['id'].tolist()
-                    update_watchlist_order_in_bq(USER_ID, remaining_ids)
-                    st.cache_data.clear(); st.rerun()
+            # 修正: ランク引数を渡さず、削除ボタンもないシンプルな呼び出し
+            render_watchlist_row(row, currency, rate)
     else:
-        st.info("カスタムウォッチリストは空です。下から銘柄を追加してください。")
+        st.info("カスタムウォッチリストは空です。下から銘柄を追加・編集してください。")
     
     st.divider()
-    with st.expander("ウォッチリストの編集（追加・並び替え）"):
-        st.info("ドラッグ＆ドロップで順番を入れ替え、保存ボタンを押してください。")
+    # 修正: UIをエキスパンダーに変更し、リストの下に配置
+    with st.expander("ウォッチリストの編集（追加・削除・並び替え）"):
+        st.info("銘柄の追加、削除、ドラッグ＆ドロップでの順番の入れ替えが可能です。")
         
         # 現在のリストと全銘柄リストを用意
-        current_list_ids = set(watchlist_db['coin_id']) if not watchlist_db.empty else set()
+        current_list_ids = watchlist_db['coin_id'].tolist() if not watchlist_db.empty else []
         all_coins_options = {row['id']: f"{row['name']} ({row['symbol'].upper()})" for _, row in market_data.iterrows()}
         
         # st.multiselectで現在のリストを表示・編集可能にする
         selected_coins = st.multiselect(
-            "銘柄の選択と並び替え",
+            "銘柄リスト",
             options=all_coins_options.keys(),
             format_func=lambda x: all_coins_options.get(x, x),
-            default=watchlist_db['coin_id'].tolist() if not watchlist_db.empty else []
+            default=current_list_ids
         )
         
         if st.button("この内容でウォッチリストを保存"):
-            # 追加された銘柄、削除された銘柄を特定
-            new_list_ids = set(selected_coins)
-            # 削除
-            for coin_id in current_list_ids - new_list_ids:
-                remove_from_watchlist_in_bq(USER_ID, coin_id)
-            # 順序更新
             update_watchlist_order_in_bq(USER_ID, selected_coins)
             st.toast("ウォッチリストを更新しました。")
-            st.cache_data.clear(); st.rerun()
+            st.cache_data.clear()
+            st.rerun()
 
 def render_watchlist_page(jpy_market_data: pd.DataFrame):
     c1, _, c3, c4 = st.columns([1.5, 0.5, 1.5, 1.5])
