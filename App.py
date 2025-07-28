@@ -404,16 +404,16 @@ def display_asset_list_new(summary_df: pd.DataFrame, currency: str, rate: float)
             value_display = f"{symbol}{row['評価額_jpy'] * rate:,.2f}"
             price_display = f"{symbol}{price_per_unit:,.2f}"
         
-        # 修正: アイコンとシンボルを横並びにするレイアウトに変更
+        # 修正: アイコンサイズを 24x24 に変更
         card_html = f"""
         <div style="background-color: #1E1E1E; border: 1px solid #444444; border-radius: 10px; padding: 15px 20px; margin-bottom: 12px;">
             <div style="display: grid; grid-template-columns: 3fr 3fr 4fr; align-items: center; gap: 10px;">
-                <div>
-                    <div style="display: flex; align-items: center; gap: 12px;">
-                        <img src="{image_url}" width="36" height="36" style="border-radius: 50%;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <img src="{image_url}" width="24" height="24" style="border-radius: 50%;">
+                    <div>
                         <p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; color: #FFFFFF;">{row["symbol"].upper()}</p>
+                        <p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #9E9E9E; margin: 0;">{row["アカウント数"]} 取引所</p>
                     </div>
-                    <p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #9E9E9E; margin: 2px 0 0; padding-left: 48px;">{row["アカウント数"]} 取引所</p>
                 </div>
                 <div style="text-align: right;"><p style="font-size: clamp(0.9em, 2.2vw, 1em); font-weight: 500; margin: 0; color: #E0E0E0;">{quantity_display}</p><p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #9E9E9E; margin: 0;">{price_display}</p></div>
                 <div style="text-align: right;"><p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; color: #FFFFFF;">{value_display}</p><p style="font-size: clamp(0.8em, 2vw, 0.9em); color: {change_color}; margin: 0;">{change_sign} {change_display}</p></div>
