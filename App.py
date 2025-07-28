@@ -11,7 +11,7 @@
 - ポートフォリオの円グラフおよび資産一覧での可視化
 - JPY建て、USD建てでの資産評価表示
 - 取引履歴の追加、編集（数量・取引所）、削除
-- 時価総額ランキングとカスタムウォッチリストの表示
+- 時価総額ランキングとカスタムウォッチリストの表示（並び替え・削除対応）
 """
 
 # === 1. ライブラリのインポート ===
@@ -255,39 +255,42 @@ def remove_from_watchlist_in_bq(user_id: str, coin_id: str):
     bq_client.query(query, job_config=job_config).result()
 
 def update_watchlist_order_in_bq(user_id: str, ordered_coin_ids: List[str]):
-    """
-    ウォッチリストの順序を一括で更新する。
-    トランザクションを使い、個別のUPDATE文で堅牢に処理する。
-    """
-    if not bq_client or not ordered_coin_ids:
+    if not bq_client: return
+    
+    if not ordered_coin_ids: # 空リストの場合は全削除
+        query = f"DELETE FROM {TABLE_WATCHLIST_FULL_ID} WHERE user_id = @user_id"
+        job_config = bigquery.QueryJobConfig(query_parameters=[bigquery.ScalarQueryParameter("user_id", "STRING", user_id)])
+        bq_client.query(query, job_config=job_config).result()
         return
 
-    queries = []
-    for i, coin_id in enumerate(ordered_coin_ids):
-        query = f"""
-        UPDATE `{TABLE_WATCHLIST_FULL_ID}`
-        SET sort_order = {i}
-        WHERE user_id = '{user_id}' AND coin_id = '{coin_id}';
-        """
-        queries.append(query)
-    
-    # BigQueryは暗黙的に各ステートメントがトランザクションとして扱われるが、
-    # スクリプトとしてまとめて送信することでアトミック性を高める
-    full_script = "\n".join(queries)
+    # MERGE文は堅牢性を高めるため、CASE文を使ったUPDATEに切り替える
+    update_cases = "\n".join([f"WHEN '{coin_id}' THEN {i}" for i, coin_id in enumerate(ordered_coin_ids)])
+    query = f"""
+    UPDATE `{TABLE_WATCHLIST_FULL_ID}`
+    SET sort_order = CASE coin_id
+        {update_cases}
+    END
+    WHERE user_id = '{user_id}' AND coin_id IN ({','.join([f"'{c}'" for c in ordered_coin_ids])})
+    """
     try:
-        job = bq_client.query(full_script)
-        job.result()  # クエリの完了を待つ
+        job = bq_client.query(query)
+        job.result()
     except Exception as e:
         st.error(f"ウォッチリストの並び替え中にエラーが発生しました: {e}")
 
-
 # === 5. API & データ処理関数 ===
-@st.cache_data(ttl=600)
-def get_market_data() -> pd.DataFrame:
+@st.cache_data(ttl=300)
+def get_full_market_data(currency='jpy') -> pd.DataFrame:
     try:
-        data = cg_client.get_coins_markets(vs_currency='jpy', order='market_cap_desc', per_page=100, page=1)
-        df = pd.DataFrame(data, columns=['id', 'symbol', 'name', 'image', 'current_price', 'price_change_24h', 'price_change_percentage_24h', 'market_cap'])
-        return df.rename(columns={'current_price': 'price_jpy', 'price_change_24h': 'price_change_24h_jpy'})
+        # スパークライン付きのデータを取得
+        data = cg_client.get_coins_markets(
+            vs_currency=currency, order='market_cap_desc', per_page=250, page=1, sparkline=True
+        )
+        df = pd.DataFrame(data)
+        # 必要なカラムのみに絞る
+        cols = ['id', 'symbol', 'name', 'image', f'current_price', f'price_change_percentage_24h', 'market_cap', 'sparkline_in_7d']
+        df = df[[col for col in cols if col in df.columns]]
+        return df
     except Exception as e:
         st.error(f"市場価格データの取得に失敗しました: {e}")
         return pd.DataFrame()
@@ -302,7 +305,13 @@ def get_exchange_rate(target_currency: str) -> float:
         st.warning(f"{target_currency.upper()}の為替レート取得に失敗しました: {e}")
         return 1.0
 
-def calculate_portfolio(transactions_df: pd.DataFrame, price_map: Dict[str, float],price_change_map: Dict[str, float], name_map: Dict[str, str]) -> Tuple[Dict, float, float]:
+def calculate_portfolio(transactions_df: pd.DataFrame, market_data: pd.DataFrame) -> Tuple[Dict, float, float]:
+    price_map = market_data.set_index('id')['current_price'].to_dict()
+    price_change_map = market_data.set_index('id').apply(
+        lambda row: row['current_price'] / (1 + row.get('price_change_percentage_24h', 0) / 100) if row.get('price_change_percentage_24h') else 0,
+        axis=1
+    ).to_dict()
+
     portfolio, total_asset_jpy, total_change_24h_jpy = {}, 0.0, 0.0
     if transactions_df.empty: return portfolio, total_asset_jpy, total_change_24h_jpy
     for (coin_id, exchange), group in transactions_df.groupby(['コインID', '取引所']):
@@ -310,9 +319,9 @@ def calculate_portfolio(transactions_df: pd.DataFrame, price_map: Dict[str, floa
         sell_quantity = group[group['登録種別'].isin(TRANSACTION_TYPES_SELL)]['数量'].sum()
         current_quantity = buy_quantity - sell_quantity
         if current_quantity > 1e-9:
-            price, change_24h = price_map.get(coin_id, 0), price_change_map.get(coin_id, 0)
+            price, change_24h = price_map.get(coin_id, 0), price_map.get(coin_id, 0) - price_change_map.get(coin_id, 0)
             value = current_quantity * price
-            portfolio[(coin_id, exchange)] = {"コイン名": name_map.get(coin_id, coin_id), "取引所": exchange, "保有数量": current_quantity, "現在価格(JPY)": price, "評価額(JPY)": value, "コインID": coin_id}
+            portfolio[(coin_id, exchange)] = {"コイン名": market_data.set_index('id').at[coin_id, 'name'], "取引所": exchange, "保有数量": current_quantity, "現在価格(JPY)": price, "評価額(JPY)": value, "コインID": coin_id}
             total_asset_jpy += value
             total_change_24h_jpy += current_quantity * change_24h
     return portfolio, total_asset_jpy, total_change_24h_jpy
@@ -324,18 +333,16 @@ def summarize_portfolio_by_coin(portfolio: Dict, market_data: pd.DataFrame) -> p
     market_subset = market_data[['id', 'symbol', 'name', 'price_change_percentage_24h', 'image']].rename(columns={'id': 'コインID'})
     summary = summary.reset_index().merge(market_subset, on='コインID', how='left')
     summary['price_change_percentage_24h'] = summary['price_change_percentage_24h'].fillna(0)
-    summary['symbol'], summary['image'], summary['name'] = summary['symbol'].fillna(''), summary['image'].fillna(''), summary['name'].fillna('')
+    summary.fillna({'symbol': '', 'image': '', 'name': ''}, inplace=True)
     summary = summary[summary['保有数量'] > 1e-9]
     return summary
 
-def summarize_portfolio_by_exchange(portfolio: Dict) -> pd.DataFrame:
-    if not portfolio: return pd.DataFrame()
-    df = pd.DataFrame.from_dict(portfolio, orient='index').reset_index(drop=True)
-    return df.groupby('取引所').agg(評価額_jpy=('評価額(JPY)', 'sum'), コイン数=('コイン名', 'nunique')).sort_values(by='評価額_jpy', ascending=False).reset_index()
-
-def calculate_btc_value(total_asset_jpy: float, price_map: Dict[str, float]) -> float:
-    btc_price_jpy = price_map.get('bitcoin', 0)
-    return total_asset_jpy / btc_price_jpy if btc_price_jpy > 0 else 0.0
+def calculate_btc_value(total_asset_jpy: float, market_data: pd.DataFrame) -> float:
+    try:
+        btc_price_jpy = market_data.set_index('id').at['bitcoin', 'current_price']
+        return total_asset_jpy / btc_price_jpy if btc_price_jpy > 0 else 0.0
+    except KeyError:
+        return 0.0
 
 # === 6. UIコンポーネント & ヘルパー関数 ===
 def format_market_cap(value: float, symbol: str) -> str:
@@ -352,6 +359,7 @@ def generate_sparkline_svg(data: List[float], color: str = 'grey', width: int = 
     return f'<svg width="{width}" height="{height}" viewbox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" style="overflow: visible;"><path d="{path_d}" stroke="{color}" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" /></svg>'
 
 def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_change_24h_jpy: float, currency: str, rate: float):
+    # ... (変更なし)
     is_hidden = st.session_state.get('balance_hidden', False)
     if is_hidden:
         asset_display, btc_display, change_display, pct_display = f"{CURRENCY_SYMBOLS[currency]} *******", "≈ ***** BTC", "*****", "**.**%"
@@ -381,29 +389,6 @@ def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_c
     </div>
     """
     st.markdown(card_html, unsafe_allow_html=True)
-
-def display_composition_bar(summary_df: pd.DataFrame):
-    if summary_df.empty or summary_df['評価額_jpy'].sum() <= 0: return
-    total_value = summary_df['評価額_jpy'].sum()
-    top_n = 5
-    display_df = summary_df.head(top_n).copy()
-    if len(summary_df) > top_n:
-        other_value = summary_df.tail(len(summary_df) - top_n)['評価額_jpy'].sum()
-        other_row = pd.DataFrame([{'コイン名': 'その他', '評価額_jpy': other_value, 'symbol': 'その他'}])
-        display_df = pd.concat([display_df, other_row], ignore_index=True)
-
-    display_df['percentage'] = (display_df['評価額_jpy'] / total_value) * 100
-    display_df['color'] = display_df['コイン名'].map(COIN_COLORS).fillna("#D3D3D3")
-    
-    legend_parts = ['<div style="display: flex; flex-wrap: nowrap; gap: 15px; overflow-x: auto; padding-bottom: 5px;">']
-    for _, row in display_df.iterrows():
-        display_text = row['symbol'].upper() if row['コイン名'] != 'その他' else 'その他'
-        legend_parts.append(f'<div style="display: flex; align-items: center; flex-shrink: 0;"><div style="width: 12px; height: 12px; background-color: {row["color"]}; border-radius: 3px; margin-right: 5px;"></div><span style="font-size: clamp(0.75em, 2vw, 0.9em); color: #E0E0E0;">{display_text} {row["percentage"]:.2f}%</span></div>')
-    legend_parts.append('</div>')
-    st.markdown("".join(legend_parts), unsafe_allow_html=True)
-
-    bar_html = '<div style="display: flex; width: 100%; height: 12px; border-radius: 5px; overflow: hidden; margin-top: 10px;">' + "".join([f'<div style="width: {row["percentage"]}%; background-color: {row["color"]};"></div>' for _, row in display_df.iterrows()]) + '</div>'
-    st.markdown(bar_html, unsafe_allow_html=True)
 
 def display_asset_list_new(summary_df: pd.DataFrame, currency: str, rate: float):
     st.subheader("保有資産")
@@ -441,17 +426,12 @@ def display_asset_list_new(summary_df: pd.DataFrame, currency: str, rate: float)
         </div>
         """
         st.markdown(card_html, unsafe_allow_html=True)
-
-# ... (他のUI関数は省略) ...
+# ... 他のUI関数は省略 ...
 
 # === 7. ページ描画関数 ===
 def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFrame, currency: str, rate: float):
-    price_map = market_data.set_index('id')['price_jpy'].to_dict()
-    price_change_map = market_data.set_index('id')['price_change_24h_jpy'].to_dict()
-    name_map = market_data.set_index('id')['name'].to_dict()
-
-    portfolio, total_asset_jpy, total_change_jpy = calculate_portfolio(transactions_df, price_map, price_change_map, name_map)
-    total_asset_btc = calculate_btc_value(total_asset_jpy, price_map)
+    portfolio, total_asset_jpy, total_change_jpy = calculate_portfolio(transactions_df, market_data)
+    total_asset_btc = calculate_btc_value(total_asset_jpy, market_data)
     summary_df = summarize_portfolio_by_coin(portfolio, market_data)
     
     col1, col2 = st.columns([0.9, 0.1])
@@ -472,136 +452,110 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
     st.divider()
     tab_coin, _, _ = st.tabs(["コイン", "取引所", "履歴"]) # 他のタブは省略
     with tab_coin:
-        display_composition_bar(summary_df)
+        # display_composition_bar(summary_df) # 必要なら復活
         st.markdown("<br>", unsafe_allow_html=True) 
         display_asset_list_new(summary_df, currency, rate)
 
-def render_market_cap_watchlist(market_data: pd.DataFrame, vs_currency: str):
-    @st.cache_data(ttl=600)
-    def get_sparkline_data(currency: str) -> pd.DataFrame:
-        try:
-            data = cg_client.get_coins_markets(vs_currency=currency, order='market_cap_desc', per_page=100, page=1, sparkline=True)
-            return pd.DataFrame(data)
-        except Exception: return pd.DataFrame()
+def render_watchlist_row(row_data: pd.Series, currency: str, rate: float, rank: str = "#"):
+    """ウォッチリストの単一行をHTMLで描画する"""
+    symbol, is_positive = CURRENCY_SYMBOLS.get(currency, '$'), row_data.get('price_change_percentage_24h', 0) >= 0
+    change_color, change_icon = ("#16B583", "▲") if is_positive else ("#FF5252", "▼")
     
-    watchlist_df = get_sparkline_data(vs_currency)
-    if watchlist_df.empty:
-        st.warning("データが取得できませんでした。"); return
+    price = row_data.get('current_price', 0) * rate
+    mcap = row_data.get('market_cap', 0) * rate
+    sparkline_prices = row_data.get('sparkline_in_7d', {}).get('price', [])
 
-    currency_symbol = CURRENCY_SYMBOLS.get(vs_currency, '$')
-    for index, row in watchlist_df.iterrows():
-        rank, image_url, symbol = index + 1, row.get('image', ''), row.get('symbol', '').upper()
-        mcap_val, price_val = row.get('market_cap', 0), row.get('current_price', 0)
-        change_pct = row.get('price_change_percentage_24h', 0) or 0
-        sparkline_prices = row.get('sparkline_in_7d', {}).get('price', [])
-        is_positive = change_pct >= 0
-        change_color, change_icon = ("#16B583", "▲") if is_positive else ("#FF5252", "▼")
-        formatted_price = f"{currency_symbol}{price_val:,.4f}"
-        formatted_mcap = format_market_cap(mcap_val, currency_symbol)
-        sparkline_svg = generate_sparkline_svg(sparkline_prices, change_color)
-
-        card_html = f"""
-        <div style="display: grid; grid-template-columns: 4fr 2fr 3fr; align-items: center; padding: 10px; font-family: sans-serif; border-bottom: 1px solid #1E1E1E;">
-            <div style="display: flex; align-items: center; gap: 12px;">
-                <div style="color: #9E9E9E; width: 20px; text-align: left;">{rank}</div>
-                <img src="{image_url}" width="36" height="36" style="border-radius: 50%;">
-                <div><div style="font-weight: bold; font-size: 1.1em; color: #FFFFFF;">{symbol}</div><div style="font-size: 0.9em; color: #9E9E9E;">{formatted_mcap}</div></div>
-            </div>
-            <div style="text-align: right; font-weight: 500; font-size: 1.1em; color: #E0E0E0;">{formatted_price}</div>
-            <div style="display: flex; justify-content: flex-end; align-items: center; gap: 10px;">
-                <div style="width: 70px; height: 35px;">{sparkline_svg}</div>
-                <div style="font-weight: bold; color: {change_color}; min-width: 65px; text-align:right;">{change_icon} {abs(change_pct):.2f}%</div>
+    card_html = f"""
+    <div style="display: grid; grid-template-columns: 4fr 2fr 3fr; align-items: center; padding: 10px; font-family: sans-serif; border-bottom: 1px solid #1E1E1E;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="color: #9E9E9E; width: 20px; text-align: left;">{rank}</div>
+            <img src="{row_data.get('image', '')}" width="36" height="36" style="border-radius: 50%;">
+            <div>
+                <div style="font-weight: bold; font-size: 1.1em; color: #FFFFFF;">{row_data.get('symbol', '').upper()}</div>
+                <div style="font-size: 0.9em; color: #9E9E9E;">{format_market_cap(mcap, symbol)}</div>
             </div>
         </div>
-        """
-        st.markdown(card_html, unsafe_allow_html=True)
-
-def render_custom_watchlist(market_data: pd.DataFrame, vs_currency: str):
-    st.subheader("銘柄の追加")
-    watchlist_df = get_watchlist_from_bq(USER_ID)
-    
-    existing_coin_ids = set(watchlist_df['coin_id'])
-    
-    with st.form("add_coin_form"):
-        coin_options = {row['id']: f"{row['name']} ({row['symbol'].upper()})" for _, row in market_data.iterrows() if row['id'] not in existing_coin_ids}
-        coins_to_add = st.multiselect("ウォッチリストに追加する銘柄を選択", options=list(coin_options.keys()), format_func=lambda x: coin_options.get(x, x))
-        if st.form_submit_button("追加する"):
-            if coins_to_add:
-                add_to_watchlist_in_bq(USER_ID, coins_to_add)
-                st.cache_data.clear(); st.rerun()
-
-    st.divider()
-    if watchlist_df.empty:
-        st.info("カスタムウォッチリストは空です。"); return
-
-    watchlist_df = watchlist_df.merge(market_data, left_on='coin_id', right_on='id', how='left').dropna(subset=['id'])
-    usd_rate = get_exchange_rate('usd')
-
-    # DataFrameをリストに変換して操作しやすくする
-    watchlist_list = watchlist_df.to_dict('records')
-
-    for i, row in enumerate(watchlist_list):
-        c1, c2, c3 = st.columns([8, 1, 1])
-        with c1:
-            price_val = row.get('price_jpy', 0) * (usd_rate if vs_currency == 'usd' else 1.0)
-            change_pct = row.get('price_change_percentage_24h', 0) or 0
-            is_positive = change_pct >= 0
-            change_color, change_icon = ("#16B583", "▲") if is_positive else ("#FF5252", "▼")
-            formatted_price = f"{CURRENCY_SYMBOLS.get(vs_currency, '$')}{price_val:,.4f}"
-
-            card_html = f"""
-            <div style="display: grid; grid-template-columns: 4fr 3fr 3fr; align-items: center; padding: 5px 0; font-family: sans-serif;">
-                <div style="display: flex; align-items: center; gap: 12px;">
-                    <img src="{row['image']}" width="32" height="32" style="border-radius: 50%;">
-                    <div>
-                        <div style="font-weight: bold; color: #FFFFFF;">{row['symbol'].upper()}</div>
-                        <div style="font-size: 0.9em; color: #9E9E9E;">{row['name']}</div>
-                    </div>
-                </div>
-                <div style="text-align: right; font-weight: 500; color: #E0E0E0;">{formatted_price}</div>
-                <div style="text-align: right; font-weight: bold; color: {change_color};">{change_icon} {abs(change_pct):.2f}%</div>
+        <div style="text-align: right; font-weight: 500; font-size: 1.1em; color: #E0E0E0;">{symbol}{price:,.4f}</div>
+        <div style="display: flex; justify-content: flex-end; align-items: center; gap: 10px;">
+            <div style="width: 70px; height: 35px;">{generate_sparkline_svg(sparkline_prices, change_color)}</div>
+            <div style="font-weight: bold; color: {change_color}; min-width: 65px; text-align:right;">
+                {change_icon} {abs(row_data.get('price_change_percentage_24h', 0)):.2f}%
             </div>
-            """
-            st.markdown(card_html, unsafe_allow_html=True)
+        </div>
+    </div>
+    """
+    st.markdown(card_html, unsafe_allow_html=True)
+
+
+def render_market_cap_watchlist(market_data: pd.DataFrame, currency: str, rate: float):
+    if market_data.empty:
+        st.warning("データが取得できませんでした。"); return
+    
+    for index, row in market_data.head(100).iterrows():
+        render_watchlist_row(row, currency, rate, rank=str(index + 1))
+
+def render_custom_watchlist(market_data: pd.DataFrame, currency: str, rate: float):
+    watchlist_db = get_watchlist_from_bq(USER_ID)
+    if not watchlist_db.empty:
+        # DBの順序を市場データに適用
+        watchlist_df = watchlist_db.merge(market_data, left_on='coin_id', right_on='id', how='left').dropna(subset=['id'])
+        for _, row in watchlist_df.iterrows():
+            # 各行を削除ボタン付きで描画
+            col1, col2 = st.columns([10, 1])
+            with col1:
+                render_watchlist_row(row, currency, rate)
+            with col2:
+                st.markdown("<div style='height: 25px;'></div>", unsafe_allow_html=True) # 位置合わせ
+                if st.button("🗑️", key=f"del_custom_{row['id']}", use_container_width=True):
+                    remove_from_watchlist_in_bq(USER_ID, row['id'])
+                    # 削除後は順序の再更新が必要
+                    remaining_ids = watchlist_df[watchlist_df['id'] != row['id']]['id'].tolist()
+                    update_watchlist_order_in_bq(USER_ID, remaining_ids)
+                    st.cache_data.clear(); st.rerun()
+    else:
+        st.info("カスタムウォッチリストは空です。下から銘柄を追加してください。")
+    
+    st.divider()
+    with st.expander("ウォッチリストの編集（追加・並び替え）"):
+        st.info("ドラッグ＆ドロップで順番を入れ替え、保存ボタンを押してください。")
         
-        with c2:
-            if st.button("▲", key=f"up_{row['id']}", use_container_width=True, disabled=(i == 0)):
-                # リスト内で要素を入れ替え
-                watchlist_list[i], watchlist_list[i-1] = watchlist_list[i-1], watchlist_list[i]
-                ordered_ids = [item['id'] for item in watchlist_list]
-                update_watchlist_order_in_bq(USER_ID, ordered_ids)
-                st.cache_data.clear(); st.rerun()
+        # 現在のリストと全銘柄リストを用意
+        current_list_ids = set(watchlist_db['coin_id']) if not watchlist_db.empty else set()
+        all_coins_options = {row['id']: f"{row['name']} ({row['symbol'].upper()})" for _, row in market_data.iterrows()}
+        
+        # st.multiselectで現在のリストを表示・編集可能にする
+        selected_coins = st.multiselect(
+            "銘柄の選択と並び替え",
+            options=all_coins_options.keys(),
+            format_func=lambda x: all_coins_options.get(x, x),
+            default=watchlist_db['coin_id'].tolist() if not watchlist_db.empty else []
+        )
+        
+        if st.button("この内容でウォッチリストを保存"):
+            # 追加された銘柄、削除された銘柄を特定
+            new_list_ids = set(selected_coins)
+            # 削除
+            for coin_id in current_list_ids - new_list_ids:
+                remove_from_watchlist_in_bq(USER_ID, coin_id)
+            # 順序更新
+            update_watchlist_order_in_bq(USER_ID, selected_coins)
+            st.toast("ウォッチリストを更新しました。")
+            st.cache_data.clear(); st.rerun()
 
-            if st.button("▼", key=f"down_{row['id']}", use_container_width=True, disabled=(i == len(watchlist_list) - 1)):
-                # リスト内で要素を入れ替え
-                watchlist_list[i], watchlist_list[i+1] = watchlist_list[i+1], watchlist_list[i]
-                ordered_ids = [item['id'] for item in watchlist_list]
-                update_watchlist_order_in_bq(USER_ID, ordered_ids)
-                st.cache_data.clear(); st.rerun()
-
-        with c3:
-            if st.button("🗑️", key=f"del_{row['id']}", use_container_width=True):
-                remove_from_watchlist_in_bq(USER_ID, row['id'])
-                # 削除後のリストで順序を再更新
-                remaining_ids = [item['id'] for item in watchlist_list if item['id'] != row['id']]
-                update_watchlist_order_in_bq(USER_ID, remaining_ids)
-                st.cache_data.clear(); st.rerun()
-                
-        st.markdown("<hr style='margin: 2px 0; border-color: #222;'>", unsafe_allow_html=True)
-
-
-def render_watchlist_page(market_data):
-    c1, _, c2, c3, c4 = st.columns([1.5, 0.5, 1.5, 1.5, 1])
+def render_watchlist_page(jpy_market_data: pd.DataFrame):
+    c1, _, c3, c4 = st.columns([1.5, 0.5, 1.5, 1.5])
     with c1: vs_currency = st.selectbox("Currency", options=["jpy", "usd"], format_func=lambda x: f"{x.upper()}", key="watchlist_currency", label_visibility="collapsed")
     with c3: st.button("24時間 % ▾", use_container_width=True, disabled=True)
     with c4: st.button("トップ100 ▾", use_container_width=True, disabled=True)
     
+    rate = get_exchange_rate(vs_currency) if vs_currency == 'usd' else 1.0
+    
     tab_mcap, tab_custom = st.tabs(["時価総額ランキング", "カスタム"])
-
+    
     with tab_mcap:
-        render_market_cap_watchlist(market_data, vs_currency)
+        render_market_cap_watchlist(jpy_market_data, vs_currency, rate)
     with tab_custom:
-        render_custom_watchlist(market_data, vs_currency)
+        render_custom_watchlist(jpy_market_data, vs_currency, rate)
 
 # === 8. メイン処理 ===
 def main():
@@ -611,8 +565,8 @@ def main():
     
     if not bq_client: st.stop()
 
-    market_data = get_market_data()
-    if market_data.empty:
+    jpy_market_data = get_full_market_data(currency='jpy')
+    if jpy_market_data.empty:
         st.error("市場データを取得できませんでした。"); st.stop()
     
     init_bigquery_table(TABLE_TRANSACTIONS_FULL_ID, BIGQUERY_SCHEMA_TRANSACTIONS)
@@ -626,10 +580,10 @@ def main():
     with portfolio_tab:
         current_currency = st.session_state.currency
         current_rate = usd_rate if current_currency == 'usd' else 1.0
-        render_portfolio_page(transactions_df, market_data, currency=current_currency, rate=current_rate)
+        render_portfolio_page(transactions_df, jpy_market_data, currency=current_currency, rate=current_rate)
 
     with watchlist_tab:
-        render_watchlist_page(market_data)
+        render_watchlist_page(jpy_market_data)
 
 if __name__ == "__main__":
     main()
