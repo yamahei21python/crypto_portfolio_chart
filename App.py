@@ -1,17 +1,19 @@
 # -- coding: utf-8 --
 """
-仮想通貨ポートフォリオ管理Streamlitアプリケーション (Cookieによる永続ログイン対応)
+仮想通貨ポートフォリオ管理Streamlitアプリケーション (アカウント・編集機能付き)
 
 このアプリケーションは、ユーザーの仮想通貨取引履歴を記録・管理し、
 現在の資産状況をリアルタイムで可視化するためのツールです。
 
 主な機能:
-- ★Cookieを利用した永続ログイン機能
 - アカウント作成、ログイン、ログアウト機能
 - ユーザーごとのポートフォリオ、ウォッチリスト管理
-- CoinGecko APIを利用したリアルタイム価格取得
+- CoinGecko APIを利用したリアルタイム価格取得（手動更新機能付き）
 - Google BigQueryをバックエンドとした取引履歴の永続化
-- 取引履歴の追加、編集、削除
+- ポートフォリオの円グラフおよび資産一覧での可視化
+- JPY建て、USD建てでの資産評価表示
+- ★取引履歴の追加、編集、削除
+- 時価総額ランキングとカスタムウォッチリストの表示（並び替え・削除対応）
 """
 
 # === 1. ライブラリのインポート ===
@@ -19,16 +21,14 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from pycoingecko import CoinGeckoAPI
-from datetime import datetime, timezone, timedelta # ★ timedeltaを追加
+from datetime import datetime, timezone
 from google.cloud import bigquery
 from google.oauth2 import service_account
 import google.api_core.exceptions
-from typing import Dict, Any, Tuple, List, Optional
+from typing import Dict, Any, Tuple, List
 import re
 import bcrypt
-import uuid
-import secrets # ★ 安全なトークン生成のために追加
-from streamlit_cookies_manager import EncryptedCookieManager # ★ Cookie Managerを追加
+import uuid # ★ 取引ID生成のために追加
 
 # === 2. 定数・グローバル設定 ===
 # --- BigQuery関連 ---
@@ -41,16 +41,14 @@ TABLE_USERS_FULL_ID = f"{PROJECT_ID}.{DATASET_ID}.{TABLE_USERS}"
 TABLE_TRANSACTIONS_FULL_ID = f"{PROJECT_ID}.{DATASET_ID}.{TABLE_TRANSACTIONS}"
 TABLE_WATCHLIST_FULL_ID = f"{PROJECT_ID}.{DATASET_ID}.{TABLE_WATCHLIST}"
 
-# ★★★ `users`テーブルのスキーマ変更 ★★★
 BIGQUERY_SCHEMA_USERS = [
     bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("password_hash", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("created_at", "TIMESTAMP", mode="REQUIRED"),
-    bigquery.SchemaField("auth_token", "STRING", mode="NULLABLE"), # 認証トークン
-    bigquery.SchemaField("token_expiry", "TIMESTAMP", mode="NULLABLE"), # トークン有効期限
 ]
+# ★★★ スキーマ定義の変更 ★★★
 BIGQUERY_SCHEMA_TRANSACTIONS = [
-    bigquery.SchemaField("transaction_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("transaction_id", "STRING", mode="REQUIRED"), # ★取引IDを追加
     bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("transaction_date", "TIMESTAMP", mode="REQUIRED"),
     bigquery.SchemaField("coin_id", "STRING", mode="REQUIRED"),
@@ -62,6 +60,7 @@ BIGQUERY_SCHEMA_TRANSACTIONS = [
     bigquery.SchemaField("fee_jpy", "FLOAT64", mode="REQUIRED"),
     bigquery.SchemaField("total_jpy", "FLOAT64", mode="REQUIRED"),
 ]
+# ★★★ ここまで ★★★
 BIGQUERY_SCHEMA_WATCHLIST = [
     bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("coin_id", "STRING", mode="REQUIRED"),
@@ -81,6 +80,11 @@ CURRENCY_SYMBOLS = {'jpy': '¥', 'usd': '$'}
 TRANSACTION_TYPES_BUY = ['購入', '調整（増）']
 TRANSACTION_TYPES_SELL = ['売却', '調整（減）']
 EXCHANGES_ORDERED = ['SBIVC', 'BITPOINT', 'Binance', 'bitbank', 'GMOコイン', 'Bybit']
+COIN_COLORS = {
+    "Bitcoin": "#F7931A", "Ethereum": "#627EEA", "Solana": "#9945FF", "XRP": "#00AAE4",
+    "Tether": "#50AF95", "BNB": "#F3BA2F", "USD Coin": "#2775CA", "Dogecoin": "#C3A634",
+    "Cardano": "#0033AD", "その他": "#D3D3D3"
+}
 
 # --- CSSスタイル ---
 BLACK_THEME_CSS = """
@@ -89,8 +93,12 @@ body, .main, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
     background-color: #000000;
     color: #E0E0E0;
 }
-[data-testid="stSidebar"] { background-color: #0E0E0E; }
-h1, h2, h3, h4, h5, h6 { color: #FFFFFF; }
+[data-testid="stSidebar"] {
+    background-color: #0E0E0E;
+}
+h1, h2, h3, h4, h5, h6 {
+    color: #FFFFFF;
+}
 [data-testid="stTabs"] { color: #E0E0E0; }
 button[data-baseweb="tab"] { color: #9E9E9E; }
 button[data-baseweb="tab"][aria-selected="true"] { color: #FFFFFF; border-bottom: 2px solid #FFFFFF; }
@@ -105,33 +113,26 @@ button[data-baseweb="tab"][aria-selected="true"] { color: #FFFFFF; border-bottom
 st.set_page_config(page_title="仮想通貨ポートフォリオ", page_icon="🪙", layout="wide")
 
 @st.cache_resource
-def get_clients() -> Tuple[Optional[bigquery.Client], Optional[EncryptedCookieManager]]:
+def get_bigquery_client() -> bigquery.Client | None:
     try:
-        # BigQuery Client
         creds_dict = st.secrets["gcp_service_account"]
         creds = service_account.Credentials.from_service_account_info(creds_dict)
-        bq_client = bigquery.Client(credentials=creds, project=creds.project_id)
-
-        # Cookie Manager
-        cookies = EncryptedCookieManager(
-            password=st.secrets["COOKIE_SECRET_KEY"],
-        )
-        return bq_client, cookies
-    except (KeyError, FileNotFoundError) as e:
-        st.error(f"設定ファイル `secrets.toml` に必要なキーがありません: {e}")
-        return None, None
+        return bigquery.Client(credentials=creds, project=creds.project_id)
+    except (KeyError, FileNotFoundError):
+        st.error("GCPサービスアカウントの認証情報が設定されていません。")
+        return None
 
 cg_client = CoinGeckoAPI()
-bq_client, cookies = get_clients()
+bq_client = get_bigquery_client()
 
-# === 4. 認証関連関数 (Cookie対応) ===
+# === 4. 認証関連関数 ===
 def hash_password(password: str) -> bytes:
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
 
 def verify_password(plain_password: str, hashed_password: bytes) -> bool:
     return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password)
 
-def get_user_from_bq(user_id: str) -> Optional[Any]:
+def get_user_from_bq(user_id: str) -> Any | None:
     if not bq_client: return None
     query = f"SELECT * FROM `{TABLE_USERS_FULL_ID}` WHERE user_id = @user_id"
     job_config = bigquery.QueryJobConfig(query_parameters=[
@@ -154,66 +155,10 @@ def create_user_in_bq(user_id: str, password: str) -> bool:
     user_data = {
         "user_id": user_id,
         "password_hash": hashed_password.decode('utf-8'),
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "auth_token": None,
-        "token_expiry": None,
+        "created_at": datetime.now(timezone.utc).isoformat()
     }
     errors = bq_client.insert_rows_json(TABLE_USERS_FULL_ID, [user_data])
     return not errors
-
-def generate_and_store_token(user_id: str) -> str:
-    """安全なトークンを生成し、DBに保存して返す"""
-    if not bq_client: return ""
-    token = secrets.token_hex(32)
-    expiry_date = datetime.now(timezone.utc) + timedelta(days=30) # 30日間有効
-
-    query = f"""
-    UPDATE `{TABLE_USERS_FULL_ID}`
-    SET auth_token = @auth_token, token_expiry = @token_expiry
-    WHERE user_id = @user_id
-    """
-    job_config = bigquery.QueryJobConfig(
-        query_parameters=[
-            bigquery.ScalarQueryParameter("auth_token", "STRING", token),
-            bigquery.ScalarQueryParameter("token_expiry", "TIMESTAMP", expiry_date),
-            bigquery.ScalarQueryParameter("user_id", "STRING", user_id),
-        ]
-    )
-    bq_client.query(query, job_config=job_config).result()
-    return token
-
-def validate_token(token: str) -> Optional[str]:
-    """トークンを検証し、有効であればuser_idを返す"""
-    if not bq_client or not token: return None
-    
-    query = f"""
-    SELECT user_id FROM `{TABLE_USERS_FULL_ID}`
-    WHERE auth_token = @auth_token AND token_expiry > CURRENT_TIMESTAMP()
-    """
-    job_config = bigquery.QueryJobConfig(
-        query_parameters=[bigquery.ScalarQueryParameter("auth_token", "STRING", token)]
-    )
-    try:
-        query_job = bq_client.query(query, job_config=job_config)
-        results = list(query_job.result())
-        if results:
-            return results[0].user_id
-        return None
-    except Exception:
-        return None
-
-def clear_token(user_id: str):
-    """DBからトークンを削除する"""
-    if not bq_client: return
-    query = f"""
-    UPDATE `{TABLE_USERS_FULL_ID}`
-    SET auth_token = NULL, token_expiry = NULL
-    WHERE user_id = @user_id
-    """
-    job_config = bigquery.QueryJobConfig(
-        query_parameters=[bigquery.ScalarQueryParameter("user_id", "STRING", user_id)]
-    )
-    bq_client.query(query, job_config=job_config).result()
 
 # === 5. BigQuery 操作関数 ===
 def init_bigquery_table(table_full_id: str, schema: List[bigquery.SchemaField]):
@@ -361,7 +306,7 @@ def update_watchlist_in_bq(user_id: str, ordered_coin_ids: List[str]):
     if errors:
         st.error(f"ウォッチリストの更新に失敗しました: {errors}")
 
-# === 6. API & データ処理関数 ===
+# === 6. API & データ処理関数 (変更なし) ===
 @st.cache_data(ttl=300)
 def get_full_market_data(currency='jpy') -> pd.DataFrame:
     try:
@@ -590,6 +535,7 @@ def display_add_transaction_form(user_id: str, market_data: pd.DataFrame, curren
                     st.success(f"{transaction['coin_name']}の{trans_type}履歴を登録しました。")
                     st.rerun()
 
+# ★★★ 履歴表示＆編集機能の全体を修正 ★★★
 def display_transaction_history(user_id: str, transactions_df: pd.DataFrame):
     st.subheader("🗒️ 登録履歴一覧")
     if transactions_df.empty:
@@ -599,9 +545,12 @@ def display_transaction_history(user_id: str, transactions_df: pd.DataFrame):
     for index, row in transactions_df.iterrows():
         transaction_id = row['取引ID']
         
+        # 編集モードかどうかをチェック
         if st.session_state.get('editing_transaction_id') == transaction_id:
+            # --- 編集フォームの表示 ---
             with st.form(key=f"edit_form_{transaction_id}"):
                 st.markdown(f"**{row['コイン名']}** - {row['登録種別']} の履歴を編集中...")
+                
                 cols = st.columns(3)
                 with cols[0]:
                     edit_date = st.date_input("取引日", value=row['登録日'], key=f"edit_date_{transaction_id}")
@@ -632,6 +581,7 @@ def display_transaction_history(user_id: str, transactions_df: pd.DataFrame):
                         st.session_state.editing_transaction_id = None
                         st.rerun()
         else:
+            # --- 通常の履歴表示 ---
             with st.container(border=True):
                 cols = st.columns([4, 2, 2])
                 with cols[0]:
@@ -794,10 +744,6 @@ def render_auth_page():
                     return
                 user_data = get_user_from_bq(user_id)
                 if user_data and verify_password(password, user_data['password_hash'].encode('utf-8')):
-                    token = generate_and_store_token(user_id)
-                    cookies['auth_token'] = token
-                    cookies.save()
-                    
                     st.session_state.authenticated = True
                     st.session_state.user_id = user_id
                     st.toast("ログインしました！", icon="🎉")
@@ -827,26 +773,14 @@ def render_auth_page():
 def main():
     st.markdown(BLACK_THEME_CSS, unsafe_allow_html=True)
     
-    if not bq_client or not cookies:
-        st.stop()
-
     st.session_state.setdefault('authenticated', False)
     st.session_state.setdefault('user_id', None)
     st.session_state.setdefault('balance_hidden', False)
     st.session_state.setdefault('currency', 'jpy')
     st.session_state.setdefault('watchlist_currency', 'jpy')
-    st.session_state.setdefault('editing_transaction_id', None)
+    st.session_state.setdefault('editing_transaction_id', None) # ★編集モード管理用
     
-    if not st.session_state.authenticated:
-        auth_token = cookies.get('auth_token')
-        if auth_token:
-            user_id = validate_token(auth_token)
-            if user_id:
-                st.session_state.authenticated = True
-                st.session_state.user_id = user_id
-            else:
-                del cookies['auth_token']
-                cookies.save()
+    if not bq_client: st.stop()
     
     if not st.session_state.authenticated:
         init_bigquery_table(TABLE_USERS_FULL_ID, BIGQUERY_SCHEMA_USERS)
@@ -858,11 +792,6 @@ def main():
     with st.sidebar:
         st.success(f"{user_id} でログイン中")
         if st.button("ログアウト", use_container_width=True):
-            clear_token(user_id)
-            if 'auth_token' in cookies:
-                del cookies['auth_token']
-                cookies.save()
-            
             for key in list(st.session_state.keys()): del st.session_state[key]
             st.toast("ログアウトしました。")
             st.rerun()
