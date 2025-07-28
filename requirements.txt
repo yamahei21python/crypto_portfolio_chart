@@ -8,3 +8,4 @@ db-dtypes
 google-auth
 kaleido
 bcrypt
+streamlit-cookies-manager
