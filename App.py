@@ -340,20 +340,18 @@ def format_price(price: float, symbol: str) -> str:
     formatted = re.sub(r'(\.\d*?[1-9])0+$', r'\1', formatted)
     return f"{symbol}{formatted}"
 
-# ----------------- ▼▼▼ 変更箇所 ▼▼▼ -----------------
 def format_market_cap(value: float, symbol: str) -> str:
     # JPYの場合は「兆」「億」単位、それ以外は「B」「M」単位で表示
     if symbol == '¥':
         if value >= 1_000_000_000_000: return f"{symbol}{value / 1_000_000_000_000:.2f}兆"
         if value >= 100_000_000: return f"{symbol}{value / 100_000_000:.2f}億"
-        if value >= 1_000_000: return f"{symbol}{value / 10_000:,.1f}万" # M(Million)より万円表示が自然
+        if value >= 1_000_000: return f"{symbol}{value / 10_000:,.1f}万"
         return f"{symbol}{value:,.0f}"
 
     # JPY以外の通貨
     if value >= 1_000_000_000: return f"{symbol}{value / 1_000_000_000:.2f}B"
     if value >= 1_000_000: return f"{symbol}{value / 1_000_000:.2f}M"
     return f"{symbol}{value:,.0f}"
-# ----------------- ▲▲▲ 変更箇所 ▲▲▲ -----------------
 
 def generate_sparkline_svg(data: List[float], color: str = 'grey', width: int = 80, height: int = 35) -> str:
     if not data or len(data) < 2: return ""
@@ -414,7 +412,6 @@ def display_asset_list_new(summary_df: pd.DataFrame, currency: str, rate: float)
             value_display = f"{symbol}{row['評価額_jpy'] * rate:,.2f}"
             price_display = f"{symbol}{price_per_unit:,.2f}"
         
-        # 修正: アイコンサイズを 24x24 に変更
         card_html = f"""
         <div style="background-color: #1E1E1E; border: 1px solid #444444; border-radius: 10px; padding: 15px 20px; margin-bottom: 12px;">
             <div style="display: grid; grid-template-columns: 3fr 3fr 4fr; align-items: center; gap: 10px;">
@@ -521,10 +518,19 @@ def render_portfolio_page(transactions_df: pd.DataFrame, market_data: pd.DataFra
         if st.button("👁️", key=f"toggle_visibility_{currency}", help="残高の表示/非表示"):
             st.session_state.balance_hidden = not st.session_state.get('balance_hidden', False)
             st.rerun()
-        button_label, new_currency = ("USD", "usd") if currency == 'jpy' else ("JPY", "jpy")
-        if st.button(button_label, key=f"currency_toggle_main_{currency}"):
+        
+        # ----------------- ▼▼▼ 変更箇所1 ▼▼▼ -----------------
+        # ボタンのラベルを「USD」「JPY」から「$」「¥」に変更
+        if currency == 'jpy':
+            button_label, new_currency = (CURRENCY_SYMBOLS['usd'], "usd") # $
+        else:
+            button_label, new_currency = (CURRENCY_SYMBOLS['jpy'], "jpy") # ¥
+
+        if st.button(button_label, key=f"currency_toggle_main_{currency}", help=f"{new_currency.upper()}表示に切り替え"):
             st.session_state.currency = new_currency
             st.rerun()
+        # ----------------- ▲▲▲ 変更箇所1 ▲▲▲ -----------------
+
         if st.button("🔄", key=f"refresh_data_{currency}", help="市場価格を更新"):
             st.cache_data.clear()
             st.rerun()
@@ -614,10 +620,18 @@ def render_watchlist_page(jpy_market_data: pd.DataFrame):
     _, col_btn = st.columns([0.9, 0.1])
     with col_btn:
         vs_currency = st.session_state.watchlist_currency
-        button_label, new_currency = ("USD", "usd") if vs_currency == 'jpy' else ("JPY", "jpy")
-        if st.button(button_label, key="currency_toggle_watchlist", use_container_width=True):
+        
+        # ----------------- ▼▼▼ 変更箇所2 ▼▼▼ -----------------
+        # ボタンのラベルを「USD」「JPY」から「$」「¥」に変更
+        if vs_currency == 'jpy':
+            button_label, new_currency = (CURRENCY_SYMBOLS['usd'], "usd") # $
+        else:
+            button_label, new_currency = (CURRENCY_SYMBOLS['jpy'], "jpy") # ¥
+
+        if st.button(button_label, key="currency_toggle_watchlist", use_container_width=True, help=f"{new_currency.upper()}表示に切り替え"):
             st.session_state.watchlist_currency = new_currency
             st.rerun()
+        # ----------------- ▲▲▲ 変更箇所2 ▲▲▲ -----------------
 
     rate = get_exchange_rate(vs_currency) if vs_currency == 'usd' else 1.0
     
