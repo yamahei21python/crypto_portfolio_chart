@@ -69,9 +69,9 @@ BIGQUERY_SCHEMA_WATCHLIST = [
 ]
 
 COLUMN_NAME_MAP_JA = {
-    'transaction_id': '取引ID', 'transaction_date': '登録日', 'coin_name': 'コイン名',
-    'exchange': '取引所', 'transaction_type': '登録種別', 'quantity': '数量',
-    'price_jpy': '価格(JPY)', 'fee_jpy': '手数料(JPY)', 'total_jpy': '合計(JPY)',
+    'transaction_id': '取引ID', 'transaction_date': '登録日', 'coin_name': 'コイン名', 
+    'exchange': '取引所', 'transaction_type': '登録種別', 'quantity': '数量', 
+    'price_jpy': '価格(JPY)', 'fee_jpy': '手数料(JPY)', 'total_jpy': '合計(JPY)', 
     'coin_id': 'コインID'
 }
 
@@ -81,11 +81,10 @@ TRANSACTION_TYPES_BUY = ['購入', '調整（増）']
 TRANSACTION_TYPES_SELL = ['売却', '調整（減）']
 EXCHANGES_ORDERED = ['SBIVC', 'BITPOINT', 'Binance', 'bitbank', 'GMOコイン', 'Bybit']
 COIN_COLORS = {
-    "Bitcoin": "#007AFF", "Ethereum": "#8A2BE2", "Solana": "#F54EA2", "XRP": "#00AAE4",
+    "Bitcoin": "#F7931A", "Ethereum": "#627EEA", "Solana": "#9945FF", "XRP": "#00AAE4",
     "Tether": "#50AF95", "BNB": "#F3BA2F", "USD Coin": "#2775CA", "Dogecoin": "#C3A634",
-    "Cardano": "#0033AD", "その他": "#E5E5EA"
+    "Cardano": "#0033AD", "その他": "#D3D3D3"
 }
-
 
 # --- CSSスタイル ---
 BLACK_THEME_CSS = """
@@ -151,7 +150,7 @@ def create_user_in_bq(user_id: str, password: str) -> bool:
     if get_user_from_bq(user_id):
         st.error("このユーザーIDは既に使用されています。")
         return False
-
+    
     hashed_password = hash_password(password)
     user_data = {
         "user_id": user_id,
@@ -351,7 +350,7 @@ def calculate_portfolio(transactions_df: pd.DataFrame, market_data: pd.DataFrame
             yesterday_price = yesterday_price_map.get(coin_id, price)
             change_24h = price - yesterday_price
             value = current_quantity * price
-
+            
             try:
                 coin_name = market_data.set_index('id').at[coin_id, 'name']
             except KeyError:
@@ -388,7 +387,7 @@ def calculate_btc_value(total_asset_jpy: float, market_data: pd.DataFrame) -> fl
         return total_asset_jpy / btc_price_jpy if btc_price_jpy > 0 else 0.0
     except KeyError:
         return 0.0
-
+        
 # === 7. UIコンポーネント & ヘルパー関数 ===
 def format_price(price: float, symbol: str) -> str:
     if price >= 1:
@@ -419,130 +418,76 @@ def generate_sparkline_svg(data: List[float], color: str = 'grey', width: int = 
 
 def display_summary_card(total_asset_jpy: float, total_asset_btc: float, total_change_24h_jpy: float, currency: str, rate: float):
     is_hidden = st.session_state.get('balance_hidden', False)
-    eye_icon = '👁️' # アイコンは常に表示
+    if is_hidden:
+        asset_display, btc_display, change_display, pct_display = f"{CURRENCY_SYMBOLS[currency]} *******", "≈ ***** BTC", "*****", "**.**%"
+        card_top_bg, card_bottom_bg, change_text_color = "#1E1E1E", "#2A2A2A", "#9E9E9E"
+    else:
+        yesterday_asset = total_asset_jpy - total_change_24h_jpy
+        change_pct = (total_change_24h_jpy / yesterday_asset * 100) if yesterday_asset != 0 else 0
+        symbol, is_positive = CURRENCY_SYMBOLS[currency], total_change_24h_jpy >= 0
+        card_top_bg, card_bottom_bg = ("#16B583", "#129B72") if is_positive else ("#FF5252", "#E54A4A")
+        change_text_color, change_sign = "#FFFFFF", "+" if is_positive else ""
+        asset_display = f"{symbol}{(total_asset_jpy * rate):,.2f} {currency.upper()}"
+        btc_display = f"≈ {total_asset_btc:.8f} BTC"
+        change_display = f"{change_sign}{(total_change_24h_jpy * rate):,.2f} {currency.upper()}"
+        pct_display = f"{change_sign}{change_pct:.2f}%"
     card_html = f"""
-    <div style="background-color: #2C2C2E; border-radius: 12px; overflow: hidden; font-family: sans-serif; position: relative;">
-        <div style="background-color: #1DB954; padding: 20px;">
+    <div style="border-radius: 10px; overflow: hidden; font-family: sans-serif;">
+        <div style="padding: 20px; background-color: {card_top_bg};">
             <p style="font-size: 0.9em; margin: 0; color: #FFFFFF; opacity: 0.8;">残高</p>
-            <p style="font-size: clamp(1.8em, 5vw, 2.4em); font-weight: bold; margin: 5px 0; line-height: 1.2; color: #FFFFFF;">
-                {'******** JPY' if is_hidden else f'{total_asset_jpy:,.2f} JPY'}
-            </p>
-            <p style="font-size: clamp(0.9em, 2.5vw, 1.1em); font-weight: 500; margin: 0; color: #FFFFFF; opacity: 0.9;">
-                {'≈ ******* BTC' if is_hidden else f'≈ {total_asset_btc:.8f} BTC'}
-            </p>
+            <p style="font-size: clamp(1.6em, 5vw, 2.2em); font-weight: bold; margin: 0; line-height: 1.2; color: #FFFFFF;">{asset_display}</p>
+            <p style="font-size: clamp(0.9em, 2.5vw, 1.1em); font-weight: 500; margin-top: 5px; color: #FFFFFF; opacity: 0.9;">{btc_display}</p>
         </div>
-        <div style="background-color: #1DB954; padding: 15px 20px; display: flex; align-items: start; border-top: 1px solid rgba(255,255,255,0.1);">
-            <div style="flex-basis: 50%;">
-                <p style="font-size: 0.9em; margin: 0; color: #FFFFFF; opacity: 0.8;">24h 変動額</p>
-                <p style="font-size: clamp(1em, 3vw, 1.2em); font-weight: 600; margin-top: 5px; color: #FFFFFF;">
-                    {'******** JPY' if is_hidden else f'{total_change_24h_jpy:+.2f} JPY'}
-                </p>
-            </div>
-            <div style="flex-basis: 50%;">
-                <p style="font-size: 0.9em; margin: 0; color: #FFFFFF; opacity: 0.8;">24h 変動率</p>
-                <p style="font-size: clamp(1em, 3vw, 1.2em); font-weight: 600; margin-top: 5px; color: #FFFFFF;">
-                    {'** %' if is_hidden else f'{((total_change_24h_jpy / (total_asset_jpy - total_change_24h_jpy)) * 100) if (total_asset_jpy - total_change_24h_jpy) != 0 else 0:+.2f}%'}
-                </p>
-            </div>
+        <div style="padding: 15px 20px; background-color: {card_bottom_bg}; display: flex; align-items: start;">
+            <div style="flex-basis: 50%;"><p style="font-size: 0.9em; margin: 0; color: #FFFFFF; opacity: 0.8;">24h 変動額</p><p style="font-size: clamp(1em, 3vw, 1.2em); font-weight: 600; margin-top: 5px; color: {change_text_color};">{change_display}</p></div>
+            <div style="flex-basis: 50%;"><p style="font-size: 0.9em; margin: 0; color: #FFFFFF; opacity: 0.8;">24h 変動率</p><p style="font-size: clamp(1em, 3vw, 1.2em); font-weight: 600; margin-top: 5px; color: {change_text_color};">{pct_display}</p></div>
         </div>
     </div>
     """
-    # 残高表示部分は元の画像のデザインに近づけるため、緑色で統一
     st.markdown(card_html, unsafe_allow_html=True)
 
 def display_asset_list_new(summary_df: pd.DataFrame, currency: str, rate: float):
-    # st.subheader("保有資産")
+    st.subheader("保有資産")
     if summary_df.empty:
         st.info("保有資産はありません。"); return
-
+    
     symbol, is_hidden = CURRENCY_SYMBOLS[currency], st.session_state.get('balance_hidden', False)
     for _, row in summary_df.iterrows():
         change_pct = row.get('price_change_percentage_24h', 0)
         is_positive = change_pct >= 0
-        change_color, change_sign = ("#34C759", "▲") if is_positive else ("#FF3B30", "▼")
+        change_color, change_sign = ("#16B583", "▲") if is_positive else ("#FF5252", "▼")
         change_display, image_url = f"{abs(change_pct):.2f}%", row.get('image', '')
-
-        # 評価額 (JPY) を取得し、米ドルに換算
-        value_jpy = row['評価額_jpy']
-        value_usd = value_jpy * rate if currency == 'usd' else value_jpy # JPYの場合はそのまま
-
+        price_per_unit = (row['評価額_jpy'] / row['保有数量']) * rate if row['保有数量'] > 0 else 0
+        
         if is_hidden:
-            quantity_display, value_display, price_display = "*****", f"{symbol}*****", f" "
+            quantity_display, value_display, price_display = "*****", f"{symbol}*****", f"{symbol}*****"
         else:
             quantity_display = f"{row['保有数量']:,.8f}".rstrip('0').rstrip('.')
-            # JPYとUSDの両方を表示
-            value_display = f"{value_jpy:,.2f} JPY"
-            price_display = f"{value_usd:,.2f} USD"
-
-
+            value_display = f"{symbol}{row['評価額_jpy'] * rate:,.2f}"
+            price_display = f"{symbol}{price_per_unit:,.2f}"
+        
         card_html = f"""
-        <div style="background-color: #1C1C1E; border-radius: 10px; padding: 15px 20px; margin-bottom: 12px; border: 1px solid #3A3A3C;">
-            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; align-items: center; gap: 10px;">
+        <div style="background-color: #1E1E1E; border: 1px solid #444444; border-radius: 10px; padding: 15px 20px; margin-bottom: 12px;">
+            <div style="display: grid; grid-template-columns: 3fr 3fr 4fr; align-items: center; gap: 10px;">
                 <div style="display: flex; align-items: center; gap: 12px;">
-                    <img src="{image_url}" width="32" height="32" style="border-radius: 50%;">
+                    <img src="{image_url}" width="24" height="24" style="border-radius: 50%;">
                     <div>
-                        <p style="font-size: 1.1em; font-weight: bold; margin: 0; color: #FFFFFF;">{row["symbol"].upper()}</p>
-                        <p style="font-size: 0.9em; color: #8E8E93; margin: 2px 0 0 0;">{row["アカウント数"]} アカウント</p>
+                        <p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; color: #FFFFFF;">{row["symbol"].upper()}</p>
+                        <p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #9E9E9E; margin: 0;">{row["アカウント数"]} 取引所</p>
                     </div>
                 </div>
-                <div style="text-align: right;">
-                    <p style="font-size: 1.1em; font-weight: 500; margin: 0; color: #FFFFFF;">{quantity_display}</p>
-                    <p style="font-size: 0.9em; color: #8E8E93; margin: 2px 0 0 0;">{row['コイン名']}</p>
-                </div>
-                <div style="text-align: right;">
-                    <p style="font-size: 1.1em; font-weight: bold; margin: 0; color: #FFFFFF;">{value_display}</p>
-                    <p style="font-size: 0.9em; color: {change_color}; margin: 2px 0 0 0;">{change_sign} {change_display}</p>
-                </div>
+                <div style="text-align: right;"><p style="font-size: clamp(0.9em, 2.2vw, 1em); font-weight: 500; margin: 0; color: #E0E0E0;">{quantity_display}</p><p style="font-size: clamp(0.8em, 2vw, 0.9em); color: #9E9E9E; margin: 0;">{price_display}</p></div>
+                <div style="text-align: right;"><p style="font-size: clamp(1em, 2.5vw, 1.1em); font-weight: bold; margin: 0; color: #FFFFFF;">{value_display}</p><p style="font-size: clamp(0.8em, 2vw, 0.9em); color: {change_color}; margin: 0;">{change_sign} {change_display}</p></div>
             </div>
         </div>
         """
         st.markdown(card_html, unsafe_allow_html=True)
 
-
-# ★★★ 新しい関数を追加 ★★★
-def display_portfolio_allocation_bar(chart_data: pd.DataFrame):
-    """
-    ポートフォリオの資産配分を横向きの積み上げ棒グラフと凡例で表示する。
-    """
-    if chart_data.empty or chart_data['percentage'].sum() < 1:
-        return
-
-    # 棒グラフ部分のHTMLを生成
-    bar_html = '<div style="display: flex; width: 100%; height: 10px; border-radius: 5px; overflow: hidden; margin: 20px 0 15px 0;">'
-    legend_items = []
-
-    for _, row in chart_data.iterrows():
-        coin_name = row['コイン名']
-        percentage = row['percentage']
-        color = COIN_COLORS.get(coin_name, COIN_COLORS["その他"])
-
-        if percentage > 0:
-            bar_html += f'<div style="width: {percentage}%; background-color: {color};"></div>'
-
-            symbol_upper = row.get('symbol', coin_name).upper()
-            legend_item = f"""
-            <div style="display: flex; align-items: center; gap: 8px;">
-                <div style="width: 12px; height: 12px; background-color: {color};"></div>
-                <span style="color: #8E8E93; font-weight: 500;">{symbol_upper} <span style="color: #F2F2F7;">{percentage:.2f}%</span></span>
-            </div>
-            """
-            legend_items.append(legend_item)
-
-    bar_html += '</div>'
-
-    # 凡例部分のHTMLを生成
-    legend_html = '<div style="display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 24px; font-size: 0.95em;">'
-    legend_html += "".join(legend_items)
-    legend_html += '</div>'
-
-    st.markdown(bar_html + legend_html, unsafe_allow_html=True)
-
-
 def display_exchange_list(summary_exchange_df: pd.DataFrame, currency: str, rate: float):
     st.subheader("取引所別資産")
     symbol = CURRENCY_SYMBOLS[currency]
     is_hidden = st.session_state.get('balance_hidden', False)
-
+    
     if summary_exchange_df.empty:
         st.info("保有資産はありません。"); return
 
@@ -578,7 +523,7 @@ def display_add_transaction_form(user_id: str, market_data: pd.DataFrame, curren
                 quantity = st.number_input("数量", min_value=0.0, format="%.8f", key=f"qty_{currency}")
                 price = st.number_input("価格 (JPY)", min_value=0.0, format="%.2f", key=f"price_{currency}")
                 fee = st.number_input("手数料 (JPY)", min_value=0.0, format="%.2f", key=f"fee_{currency}")
-
+            
             if st.form_submit_button("この内容で登録する"):
                 transaction = {
                     "transaction_date": datetime.combine(date, datetime.min.time()),
@@ -596,16 +541,16 @@ def display_transaction_history(user_id: str, transactions_df: pd.DataFrame):
     if transactions_df.empty:
         st.info("まだ登録履歴がありません。")
         return
-
+    
     for index, row in transactions_df.iterrows():
         transaction_id = row['取引ID']
-
+        
         # 編集モードかどうかをチェック
         if st.session_state.get('editing_transaction_id') == transaction_id:
             # --- 編集フォームの表示 ---
             with st.form(key=f"edit_form_{transaction_id}"):
                 st.markdown(f"**{row['コイン名']}** - {row['登録種別']} の履歴を編集中...")
-
+                
                 cols = st.columns(3)
                 with cols[0]:
                     edit_date = st.date_input("取引日", value=row['登録日'], key=f"edit_date_{transaction_id}")
@@ -656,67 +601,47 @@ def display_transaction_history(user_id: str, transactions_df: pd.DataFrame):
 # === 8. ページ描画関数 ===
 def render_portfolio_page(user_id: str, jpy_market_data: pd.DataFrame, currency: str, rate: float):
     transactions_df = get_transactions_from_bq(user_id)
-
+    
     portfolio, total_asset_jpy, total_change_jpy = calculate_portfolio(transactions_df, jpy_market_data)
     total_asset_btc = calculate_btc_value(total_asset_jpy, jpy_market_data)
     summary_df = summarize_portfolio_by_coin(portfolio, jpy_market_data)
     summary_exchange_df = summarize_portfolio_by_exchange(portfolio)
-
+    
     col1, col2 = st.columns([0.9, 0.1])
-    with col1:
+    with col1: 
         display_summary_card(total_asset_jpy, total_asset_btc, total_change_jpy, currency, rate)
     with col2:
         st.markdown("<div style='margin-top: 30px;'></div>", unsafe_allow_html=True)
         if st.button("👁️", key=f"toggle_visibility_{currency}", help="残高の表示/非表示", use_container_width=True):
             st.session_state.balance_hidden = not st.session_state.get('balance_hidden', False)
             st.rerun()
+        
+        button_label, new_currency = (CURRENCY_SYMBOLS['usd'], "usd") if currency == 'jpy' else (CURRENCY_SYMBOLS['jpy'], "jpy")
 
-        # refresh button
+        if st.button(button_label, key=f"currency_toggle_main_{currency}", help=f"{new_currency.upper()}表示に切り替え", use_container_width=True):
+            st.session_state.currency = new_currency
+            st.rerun()
+
         if st.button("🔄", key=f"refresh_data_{currency}", help="市場価格を更新", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
-
-    # ★★★ ここから変更 ★★★
-    # ポートフォリオ配分グラフのデータを準備して表示
-    if not summary_df.empty and total_asset_jpy > 0:
-        summary_df['percentage'] = (summary_df['評価額_jpy'] / total_asset_jpy) * 100
-
-        # 上位3銘柄と「その他」にデータを分割
-        top_n = 3
-        if len(summary_df) > top_n:
-            chart_data_top = summary_df.head(top_n).copy()
-            other_percentage = summary_df.iloc[top_n:]['percentage'].sum()
-
-            if other_percentage > 0.1: # 「その他」が無視できない割合の場合のみ追加
-                other_data = pd.DataFrame([
-                    {'コイン名': 'その他', 'symbol': 'その他', 'percentage': other_percentage}
-                ])
-                chart_data = pd.concat([chart_data_top[['コイン名', 'symbol', 'percentage']], other_data], ignore_index=True)
-            else:
-                chart_data = chart_data_top[['コイン名', 'symbol', 'percentage']]
-        else:
-            chart_data = summary_df[['コイン名', 'symbol', 'percentage']]
-
-        # グラフと凡例を表示
-        display_portfolio_allocation_bar(chart_data)
-        st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True) # タブとの間に余白を追加
-
-    tab_coin, tab_account, tab_history = st.tabs(["コイン", "アカウント", "履歴"])
+            
+    st.divider()
+    
+    tab_coin, tab_exchange, tab_history = st.tabs(["コイン", "取引所", "履歴"])
     with tab_coin:
         display_asset_list_new(summary_df, currency, rate)
-    with tab_account:
+    with tab_exchange:
         display_exchange_list(summary_exchange_df, currency, rate)
     with tab_history:
         display_transaction_history(user_id, transactions_df)
         display_add_transaction_form(user_id, jpy_market_data, currency)
-    # ★★★ ここまで変更 ★★★
-
 
 def render_watchlist_row(row_data: pd.Series, currency: str, rate: float, rank: str = " "):
     currency_symbol = CURRENCY_SYMBOLS.get(currency, '$')
     is_positive = row_data.get('price_change_percentage_24h', 0) >= 0
     change_color, change_icon = ("#16B583", "▲") if is_positive else ("#FF5252", "▼")
-
+    
     price_val = row_data.get('current_price', 0) * rate
     mcap_val = row_data.get('market_cap', 0) * rate
     sparkline_prices = row_data.get('sparkline_in_7d', {}).get('price', [])
@@ -746,28 +671,28 @@ def render_watchlist_row(row_data: pd.Series, currency: str, rate: float, rank: 
 def render_market_cap_watchlist(market_data: pd.DataFrame, currency: str, rate: float):
     if market_data.empty:
         st.warning("データが取得できませんでした。"); return
-
+    
     for index, row in market_data.head(100).iterrows():
         render_watchlist_row(row, currency, rate, rank=str(index + 1))
 
 def render_custom_watchlist(user_id: str, market_data: pd.DataFrame, currency: str, rate: float):
     watchlist_db = get_watchlist_from_bq(user_id)
-
+    
     if not watchlist_db.empty:
         watchlist_df = watchlist_db.merge(market_data, left_on='coin_id', right_on='id', how='left').dropna(subset=['id'])
         for _, row in watchlist_df.iterrows():
             render_watchlist_row(row, currency, rate)
     else:
         st.info("カスタムウォッチリストは空です。下の編集エリアから銘柄を追加してください。")
-
+    
     st.divider()
     with st.container(border=True):
         st.subheader("ウォッチリストの編集")
         st.info("銘柄の追加・削除が可能です。リストの順番は選択した順になります。")
-
+        
         current_list_ids = watchlist_db['coin_id'].tolist() if not watchlist_db.empty else []
         all_coins_options = {row['id']: f"{row['name']} ({row['symbol'].upper()})" for _, row in market_data.iterrows()}
-
+        
         selected_coins = st.multiselect(
             "銘柄リスト",
             options=all_coins_options.keys(),
@@ -775,7 +700,7 @@ def render_custom_watchlist(user_id: str, market_data: pd.DataFrame, currency: s
             default=current_list_ids,
             label_visibility="collapsed"
         )
-
+        
         if st.button("この内容でウォッチリストを保存"):
             update_watchlist_in_bq(user_id, selected_coins)
             st.toast("ウォッチリストを更新しました。")
@@ -793,9 +718,9 @@ def render_watchlist_page(user_id: str, jpy_market_data: pd.DataFrame):
             st.rerun()
 
     rate = get_exchange_rate(vs_currency) if vs_currency == 'usd' else 1.0
-
+    
     tab_mcap, tab_custom = st.tabs(["時価総額", "カスタム"])
-
+    
     with tab_mcap:
         render_market_cap_watchlist(jpy_market_data, vs_currency, rate)
     with tab_custom:
@@ -847,16 +772,16 @@ def render_auth_page():
 # === 10. メイン処理 ===
 def main():
     st.markdown(BLACK_THEME_CSS, unsafe_allow_html=True)
-
+    
     st.session_state.setdefault('authenticated', False)
     st.session_state.setdefault('user_id', None)
     st.session_state.setdefault('balance_hidden', False)
     st.session_state.setdefault('currency', 'jpy')
     st.session_state.setdefault('watchlist_currency', 'jpy')
     st.session_state.setdefault('editing_transaction_id', None) # ★編集モード管理用
-
+    
     if not bq_client: st.stop()
-
+    
     if not st.session_state.authenticated:
         init_bigquery_table(TABLE_USERS_FULL_ID, BIGQUERY_SCHEMA_USERS)
         render_auth_page()
@@ -864,16 +789,6 @@ def main():
 
     user_id = st.session_state.user_id
 
-    # トップレベルのヘッダー
-    st.markdown(f"""
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-        <h1 style="font-size: 2em; margin: 0;">ポートフォリオ</h1>
-        <div>
-            <!-- ここにアイコンボタンなどを配置可能 -->
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    
     with st.sidebar:
         st.success(f"{user_id} でログイン中")
         if st.button("ログアウト", use_container_width=True):
@@ -893,14 +808,18 @@ def main():
     jpy_market_data = get_full_market_data(currency='jpy')
     if jpy_market_data.empty:
         st.error("市場データを取得できませんでした。"); st.stop()
-
+    
     usd_rate = get_exchange_rate('usd')
 
-    # メインページはポートフォリオ表示のみに
-    current_currency = st.session_state.currency
-    current_rate = usd_rate if current_currency == 'usd' else 1.0
-    render_portfolio_page(user_id, jpy_market_data, currency=current_currency, rate=current_rate)
+    portfolio_tab, watchlist_tab = st.tabs(["ポートフォリオ", "ウォッチリスト"])
 
+    with portfolio_tab:
+        current_currency = st.session_state.currency
+        current_rate = usd_rate if current_currency == 'usd' else 1.0
+        render_portfolio_page(user_id, jpy_market_data, currency=current_currency, rate=current_rate)
+
+    with watchlist_tab:
+        render_watchlist_page(user_id, jpy_market_data)
 
 if __name__ == "__main__":
     main()
